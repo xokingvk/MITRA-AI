@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background-color: #f7f4ee;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  }
+
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 8px);
+  }
+}
+
+/* Scrollbar styling - subtle and functional */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(247, 244, 238, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(73, 53, 72, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(73, 53, 72, 0.45);
+}
+
+/* Custom Accessibility text sizes when large text mode is enabled */
+.large-text-mode {
+  font-size: 115% !important;
+}
+
+/* Animations for audio pulses and listening visualizers */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(214, 163, 74, 0.5);
+  }
+  70% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 16px rgba(214, 163, 74, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(214, 163, 74, 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s infinite cubic-bezier(0.45, 0, 0.55, 1);
+}

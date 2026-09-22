@@ -1,0 +1,75 @@
+
+=== PAGE 1 ===
+MITRA AI - Health-only filtered corpus
+Page 1
+ MITRA AI - Health Schemes Only
+ Filtered from the previous 115-scheme corpus using a strict health-related requirement
+Filtering decision
+The earlier corpus included agriculture, financial aid, housing, education, livelihoods, women empowerment
+and other non-health programmes. Those non-health schemes have been removed. Only schemes from the
+previous corpus with a direct human-health, healthcare, medical, sickness, maternity-health or
+access-to-medicines purpose are retained.
+Retained schemes: 4
+Removed schemes: 111
+This is a strict filter of the previous list, not a claim that these are the only health schemes available in India.
+For production use, current official scheme guidelines and source pages should be checked before
+determining eligibility.
+1. Ayushman Bharat - Pradhan Mantri Jan Arogya Yojana (AB PM-JAY)
+Category: Health Care
+Key benefits: Health assurance/insurance support for eligible families for covered secondary and tertiary
+hospitalisation, with cashless treatment at empanelled hospitals.
+Eligibility criteria: Eligibility is based on the applicable PM-JAY beneficiary identification rules and any current
+expansion rules. Coverage depends on the beneficiary list and scheme conditions.
+Gender eligible: All genders
+Official source: Ayushman Bharat / Ayushman Arogya Mandir, Ministry of Health & Family Welfare
+Source URL: https://aam.mohfw.gov.in/
+2. Employees' State Insurance (ESI) Scheme
+Category: Health Care
+Key benefits: Medical care for insured persons and eligible family members, plus sickness, maternity,
+disablement, dependants and other social-security benefits under the ESI framework.
+Eligibility criteria: Employees in establishments covered by the ESI Act and within the applicable
+coverage/wage rules; family coverage and individual benefits follow the scheme's conditions.
+Gender eligible: All genders
+Official source: Employees' State Insurance Corporation (ESIC)
+Source URL: https://www.esic.gov.in/
+3. Pradhan Mantri Bhartiya Janaushadhi Pariyojana (PMBJP)
+Category: Health Care
+Key benefits: Makes quality generic medicines, consumables and surgical items available at affordable
+prices through Janaushadhi Kendras, helping reduce out-of-pocket medicine costs.
+Eligibility criteria: For medicine access, the scheme is intended for the general public. Opening a Janaushadhi
+Kendra has separate eligibility and application conditions.
+Gender eligible: All genders
+Official source: Pradhan Mantri Bhartiya Janaushadhi Pariyojana, Department of Pharmaceuticals
+Source URL: https://janaushadhi.gov.in/about-pmbjb
+
+=== PAGE 2 ===
+MITRA AI - Health-only filtered corpus
+Page 2
+4. Pradhan Mantri Matru Vandana Yojana (PMMVY)
+Category: Maternal & Child Health
+Key benefits: Maternity cash support intended to partly compensate wage loss and promote health-seeking
+behaviour and maternal/child health and nutrition among eligible pregnant women and lactating mothers.
+Eligibility criteria: Pregnant women and lactating mothers belonging to the current notified socially and
+economically disadvantaged categories and meeting PMMVY conditions. Benefits also cover a second child
+when the second child is a girl, subject to the scheme rules.
+Gender eligible: Women
+Official source: Ministry of Women & Child Development - PMMVY
+Source URL: https://wcd.gov.in/offerings/pradhan-mantri-matru-vandana-yojana
+
+=== PAGE 3 ===
+MITRA AI - Health-only filtered corpus
+Page 3
+Why these four were retained
+AB PM-JAY directly provides financial protection for covered hospital care. The ESI Scheme directly provides
+medical and sickness-related benefits. PMBJP directly provides access to medicines at affordable prices.
+PMMVY is a maternity-benefit programme whose stated objectives include improving health and nutrition for
+mothers and children. These health links are supported by the relevant official government sources.
+Official source references
+Ayushman Bharat - Pradhan Mantri Jan Arogya Yojana (AB PM-JAY)
+Ayushman Bharat / Ayushman Arogya Mandir, Ministry of Health & Family Welfare - https://aam.mohfw.gov.in/
+Employees' State Insurance (ESI) Scheme
+Employees' State Insurance Corporation (ESIC) - https://www.esic.gov.in/
+Pradhan Mantri Bhartiya Janaushadhi Pariyojana (PMBJP)
+Pradhan Mantri Bhartiya Janaushadhi Pariyojana, Department of Pharmaceuticals - https://janaushadhi.gov.in/about-pmbjb
+Pradhan Mantri Matru Vandana Yojana (PMMVY)
+Ministry of Women & Child Development - PMMVY - https://wcd.gov.in/offerings/pradhan-mantri-matru-vandana-yojana
