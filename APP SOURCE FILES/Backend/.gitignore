@@ -15,11 +15,9 @@ venv/
 env/
 ENV/
 
-# Data storage & FAISS vector indices generated at runtime
+# Data storage
 data/temporary_documents/*
 !data/temporary_documents/.gitkeep
-data/vector_store/*.bin
-data/vector_store/*.json
 
 # Logs & temp files
 *.log

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.core.exceptions import MitraException
 from app.api import health, chat, documents, rag, schemes
-from app.dependencies import get_retrieval_service, get_document_service
+from app.dependencies import get_retrieval_service
 
 # Setup logging configuration
 logging.basicConfig(
@@ -20,19 +20,20 @@ logger = logging.getLogger("mitra_backend")
 async def lifespan(app: FastAPI):
     """
     Application startup and shutdown lifespan context.
-    On startup: Automatically loads persistent FAISS index or ingests default PDF if index is missing.
+    Fast startup: Loads lightweight pre-built FAISS index metadata if present.
+    Does NOT trigger expensive PDF ingestion or model loading at startup.
     """
     logger.info("Initializing MITRA AI Backend service...")
     retrieval_svc = get_retrieval_service()
-    doc_svc = get_document_service()
 
-    # Attempt loading pre-existing FAISS vector store
-    if not retrieval_svc.load_index():
-        logger.info("FAISS vector store not found. Attempting automatic ingestion of permanent scheme PDFs...")
-        try:
-            doc_svc.ingest_permanent_documents()
-        except Exception as e:
-            logger.error(f"Failed automatic initial ingestion of scheme PDFs: {str(e)}")
+    # Load pre-built FAISS vector store if available (memory footprint < 5MB)
+    try:
+        if retrieval_svc.load_index():
+            logger.info("FAISS vector store metadata loaded successfully.")
+        else:
+            logger.info("No pre-built FAISS index found. Vector search will load when available.")
+    except Exception as e:
+        logger.warning(f"Note on initial vector index load: {str(e)}")
     
     yield
     logger.info("Shutting down MITRA AI Backend service.")
