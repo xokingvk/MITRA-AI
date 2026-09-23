@@ -38,17 +38,22 @@ export const ActiveVoiceListeningPage = () => {
 
   const handleDoneSpeaking = async () => {
     if (hasSubmittedRef.current) return;
-    hasSubmittedRef.current = true;
 
+    const trimmedQuery = spokenQuery ? spokenQuery.trim() : "";
+    if (!trimmedQuery) {
+      console.warn("[Voice] Submission blocked: empty transcript.");
+      alert("No speech was detected. Please speak into your microphone or tap 'Type Instead'.");
+      return;
+    }
+
+    hasSubmittedRef.current = true;
     setAnalyzing(true);
     stopListening();
 
-    const finalQuery = spokenQuery && spokenQuery.trim() ? spokenQuery.trim() : "What health schemes am I eligible for?";
-    setSpokenQuery(finalQuery);
-    setSearchQuery(finalQuery);
+    setSearchQuery(trimmedQuery);
 
     try {
-      const response = await sendChatMessage(finalQuery, language);
+      const response = await sendChatMessage(trimmedQuery, language);
       if (response && response.answer) {
         speakText(response.answer);
       }
