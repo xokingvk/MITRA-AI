@@ -20,11 +20,16 @@ export const ActiveVoiceListeningPage = () => {
   } = useApp();
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [uiNotice, setUiNotice] = useState('');
   const [waveHeights, setWaveHeights] = useState([20, 36, 56, 44, 64, 40, 56, 28, 48, 60, 32, 16]);
   const hasSubmittedRef = useRef(false);
 
   useEffect(() => {
-    startListening();
+    startListening((fullText) => {
+      if (fullText) setUiNotice('');
+    }, (errorMsg) => {
+      setUiNotice(errorMsg);
+    });
 
     const interval = setInterval(() => {
       setWaveHeights(prev => prev.map(() => Math.floor(Math.random() * 45) + 12));
@@ -41,8 +46,8 @@ export const ActiveVoiceListeningPage = () => {
 
     const trimmedQuery = spokenQuery ? spokenQuery.trim() : "";
     if (!trimmedQuery) {
-      console.warn("[Voice] Submission blocked: empty transcript.");
-      alert("No speech was detected. Please speak into your microphone or tap 'Type Instead'.");
+      console.warn("[VOICE] Submission blocked: empty transcript.");
+      setUiNotice("Please speak into your microphone or type your query below before submitting.");
       return;
     }
 
@@ -68,6 +73,7 @@ export const ActiveVoiceListeningPage = () => {
     hasSubmittedRef.current = false;
     stopListening();
     setSpokenQuery('');
+    setUiNotice('');
     setTimeout(() => {
       startListening();
     }, 200);
@@ -98,6 +104,13 @@ export const ActiveVoiceListeningPage = () => {
             </span>
           </div>
         </div>
+
+        {/* Notice Banner */}
+        {uiNotice && (
+          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-medium leading-relaxed">
+            {uiNotice}
+          </div>
+        )}
 
         {/* Dynamic Waveform Centerpiece */}
         <div className="relative flex flex-col items-center justify-center p-6 rounded-3xl bg-surface-warm-white shadow-sm overflow-hidden min-h-[180px] border border-border-warm-gray/40">
