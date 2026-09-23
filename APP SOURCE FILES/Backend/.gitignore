@@ -1,0 +1,26 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Data storage & FAISS vector indices generated at runtime
+data/temporary_documents/*
+!data/temporary_documents/.gitkeep
+data/vector_store/*.bin
+data/vector_store/*.json
+
+# Logs & temp files
+*.log
+scratch/

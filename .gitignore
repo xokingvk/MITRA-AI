@@ -1,0 +1,19 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Data & logs
+*.log
