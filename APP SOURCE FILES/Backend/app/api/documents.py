@@ -34,13 +34,15 @@ async def upload_temporary_document(
             detail="File size exceeds maximum limit of 10MB."
         )
 
-    try:
         doc_info = doc_service.process_temporary_user_document(file_bytes, file.filename)
+        raw_text = doc_info.get("text", "").strip()
+        extracted_preview = raw_text[:500] if raw_text else "Document uploaded and parsed (no readable text extracted)."
         return DocumentUploadResponse(
             document_id=doc_info["document_id"],
             filename=doc_info["filename"],
             pages_extracted=doc_info["pages_extracted"],
             chunks_count=doc_info["chunks_count"],
+            extracted_preview=extracted_preview,
             message="Document uploaded successfully and parsed as temporary session context.",
             is_temporary=True
         )

@@ -37,11 +37,9 @@ export const AppProvider = ({ children }) => {
 
   // Voice Assistant
   const [isListening, setIsListening] = useState(false);
-  const [spokenQuery, setSpokenQuery] = useState("2 acres land in Thanjavur - Financial aid & seeds");
+  const [spokenQuery, setSpokenQuery] = useState("");
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [audioTranscript, setAudioTranscript] = useState(
-    "Based on your 2-acre land holding in Thanjavur, you qualify for PM-Kisan Samman Nidhi (₹6,000/yr) and subsidized paddy seeds."
-  );
+  const [audioTranscript, setAudioTranscript] = useState("");
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -49,14 +47,7 @@ export const AppProvider = ({ children }) => {
 
   // Document Upload
   const [uploadedDoc, setUploadedDoc] = useState(null);
-  const [analysisResult, setAnalysisResult] = useState({
-    documentType: "Land Ownership Certificate (Patta Passbook)",
-    ownerName: "Ramesh Kumar",
-    landSize: "1.85 Acres (0.75 Hectares)",
-    surveyNo: "241/3B",
-    village: "Vaduvur, Thanjavur",
-    isEligible: true
-  });
+  const [analysisResult, setAnalysisResult] = useState(null);
 
   // Accessibility
   const [accessibility, setAccessibility] = useState({
@@ -82,28 +73,41 @@ export const AppProvider = ({ children }) => {
   }, [accessibility]);
 
   // Voice Interactions
+  const startListening = () => {
+    setIsListening(true);
+    voiceService.startListening(
+      (transcript) => {
+        setSpokenQuery(transcript);
+      },
+      (error) => {
+        console.warn("Voice input notice:", error);
+        setIsListening(false);
+      },
+      (finalTranscript) => {
+        setIsListening(false);
+        if (finalTranscript) {
+          setSpokenQuery(finalTranscript);
+        }
+      },
+      language === 'ta' ? 'ta-IN' : language === 'hi' ? 'hi-IN' : 'en-US'
+    );
+  };
+
+  const stopListening = () => {
+    voiceService.stopListening();
+    setIsListening(false);
+  };
+
   const toggleListening = () => {
     if (isListening) {
-      voiceService.stopListening();
-      setIsListening(false);
+      stopListening();
     } else {
-      setIsListening(true);
-      voiceService.startListening(
-        (transcript) => {
-          setSpokenQuery(transcript);
-        },
-        (error) => {
-          console.error("Voice input error:", error);
-          setIsListening(false);
-        },
-        () => {
-          setIsListening(false);
-        }
-      );
+      startListening();
     }
   };
 
   const speakText = (text) => {
+    if (!text) return;
     setIsPlayingAudio(true);
     voiceService.speak(text, () => {
       setIsPlayingAudio(false);
@@ -131,6 +135,8 @@ export const AppProvider = ({ children }) => {
         setSpokenQuery,
         isPlayingAudio,
         audioTranscript,
+        startListening,
+        stopListening,
         toggleListening,
         speakText,
         speak: speakText,

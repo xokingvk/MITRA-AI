@@ -4,24 +4,31 @@ export class VoiceAssistantService {
   constructor() {
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
     this.recognition = null;
+    this.isListening = false;
+    this.isManuallyStopped = false;
+    this.lastTranscript = '';
     
     if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       this.recognition = new SpeechRecognition();
-      this.recognition.continuous = false;
+      this.recognition.continuous = true;
       this.recognition.interimResults = true;
     }
   }
 
+  isSupported() {
+    return Boolean(this.recognition);
+  }
+
   speak(text, onEnd) {
     if (!this.synth) {
-      if (onEnd) setTimeout(onEnd, 2000);
+      if (onEnd) setTimeout(onEnd, 1000);
       return;
     }
 
     this.synth.cancel(); // Stop any ongoing speech
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95; // Clear, relaxed cadence for civic assistant
+    utterance.rate = 0.95;
     utterance.pitch = 1.0;
     
     if (onEnd) {
@@ -38,42 +45,79 @@ export class VoiceAssistantService {
     }
   }
 
-  startListening(onResult, onError, onEnd) {
+  startListening(onResult, onError, onEnd, lang = 'en-US') {
     if (!this.recognition) {
-      console.warn("Speech recognition not supported in this browser, using simulated voice input.");
-      // Fallback simulation
-      setTimeout(() => {
-        onResult("I have 2 acres land in Thanjavur and need seeds and PM-Kisan financial aid.");
-        if (onEnd) onEnd();
-      }, 3000);
+      if (onError) onError("Speech recognition is not supported in this browser.");
       return;
     }
+
+    // Stop any active recognition session first
+    this.stopListening();
+
+    this.isManuallyStopped = false;
+    this.isListening = true;
+    this.lastTranscript = '';
+    this.recognition.lang = lang;
 
     this.recognition.onresult = (event) => {
       let transcript = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
-      onResult(transcript);
+      if (transcript.trim()) {
+        this.lastTranscript = transcript.trim();
+        if (onResult) onResult(this.lastTranscript);
+      }
     };
 
-    this.recognition.onerror = (err) => {
-      if (onError) onError(err);
+    this.recognition.onerror = (event) => {
+      console.warn("Speech recognition error:", event.error);
+      const errType = event.error;
+      
+      if (errType === 'not-allowed' || errType === 'service-not-allowed') {
+        this.isListening = false;
+        this.isManuallyStopped = true;
+        if (onError) onError("Microphone access denied. Please allow microphone permissions.");
+      } else if (errType === 'no-speech') {
+        // Ignore silent timeouts during speech active listening
+      } else {
+        if (onError) onError(`Speech recognition error: ${errType}`);
+      }
     };
 
     this.recognition.onend = () => {
-      if (onEnd) onEnd();
+      this.isListening = false;
+
+      // Do NOT automatically restart if manually stopped
+      if (this.isManuallyStopped) {
+        if (onEnd) onEnd(this.lastTranscript, true);
+        return;
+      }
+
+      if (onEnd) onEnd(this.lastTranscript, false);
     };
 
-    this.recognition.start();
+    try {
+      this.recognition.start();
+    } catch (err) {
+      console.warn("Failed to start speech recognition:", err);
+      if (onError) onError("Failed to start microphone listening.");
+      this.isListening = false;
+    }
   }
 
   stopListening() {
+    this.isManuallyStopped = true;
+    this.isListening = false;
     if (this.recognition) {
       try {
         this.recognition.stop();
       } catch (e) {
-        // ignore
+        try {
+          this.recognition.abort();
+        } catch (e2) {
+          // ignore
+        }
       }
     }
   }

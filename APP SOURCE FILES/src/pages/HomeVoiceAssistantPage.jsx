@@ -99,7 +99,7 @@ export const HomeVoiceAssistantPage = () => {
               <div className="absolute w-24 h-24 rounded-full bg-secondary/20 animate-ping"></div>
             )}
             <button
-              onClick={toggleListening}
+              onClick={() => navigate('/active-voice')}
               aria-label={t("home.speak")}
               className={`relative z-10 min-w-[72px] min-h-[72px] w-20 h-20 rounded-full text-on-primary flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all focus:outline-none ${
                 isListening ? 'bg-secondary animate-pulse-ring' : 'bg-primary-container hover:bg-primary'

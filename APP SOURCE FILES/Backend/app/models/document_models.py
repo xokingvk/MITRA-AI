@@ -12,8 +12,10 @@ class DocumentUploadResponse(BaseModel):
     filename: str = Field(..., description="Original filename")
     pages_extracted: int = Field(..., description="Number of pages extracted")
     chunks_count: int = Field(..., description="Number of text chunks generated")
+    extracted_preview: Optional[str] = Field(None, description="Preview of extracted text content")
     message: str = Field(..., description="Upload confirmation message")
     is_temporary: bool = Field(True, description="Indicates document is stored in temporary context")
+
 
 class IngestionResponse(BaseModel):
     status: str = Field("success", description="Status of permanent RAG ingestion")

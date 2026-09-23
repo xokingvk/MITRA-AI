@@ -6,21 +6,24 @@ import { BottomNav } from '../components/layout/BottomNav';
 
 export const DocumentUploadVerificationPage = () => {
   const navigate = useNavigate();
-  const { setUploadedDoc, t } = useApp();
-  const [analyzing, setAnalyzing] = useState(false);
+  const { uploadedDoc, setUploadedDoc, t } = useApp();
+  const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       setUploadedDoc(e.target.files[0]);
+      setErrorMsg('');
     }
   };
 
   const handleAnalyze = () => {
-    setAnalyzing(true);
-    setTimeout(() => {
-      navigate('/document-analyzing');
-    }, 800);
+    if (!uploadedDoc) {
+      setErrorMsg("Please select a file to upload first.");
+      if (fileInputRef.current) fileInputRef.current.click();
+      return;
+    }
+    navigate('/document-analyzing');
   };
 
   return (
@@ -80,14 +83,18 @@ export const DocumentUploadVerificationPage = () => {
 
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="w-full border-2 border-dashed border-border-warm-gray rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:border-primary-container transition-colors bg-surface-sand/30"
+            className={`w-full border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${
+              uploadedDoc ? 'border-primary-container bg-emerald-50/40' : 'border-border-warm-gray hover:border-primary-container bg-surface-sand/30'
+            }`}
           >
-            <span className="material-symbols-outlined text-[36px] text-text-slate mb-2">cloud_upload</span>
+            <span className={`material-symbols-outlined text-[36px] mb-2 ${uploadedDoc ? 'text-primary-container' : 'text-text-slate'}`}>
+              {uploadedDoc ? 'task_alt' : 'cloud_upload'}
+            </span>
             <span className="font-label-md text-sm font-semibold text-text-charcoal">
-              {t("doc.chooseFile")}
+              {uploadedDoc ? uploadedDoc.name : t("doc.chooseFile")}
             </span>
             <span className="font-body-sm text-xs text-text-slate mt-1">
-              Supports PDF, PNG, JPG (Max 10MB)
+              {uploadedDoc ? `${(uploadedDoc.size / (1024 * 1024)).toFixed(2)} MB • Ready to process` : 'Supports PDF, PNG, JPG (Max 10MB)'}
             </span>
           </div>
 
@@ -99,23 +106,17 @@ export const DocumentUploadVerificationPage = () => {
             className="hidden"
           />
 
+          {errorMsg && (
+            <p className="text-xs text-red-600 font-semibold text-center">{errorMsg}</p>
+          )}
+
           <button
             onClick={handleAnalyze}
-            disabled={analyzing}
             className="w-full py-4 rounded-full bg-primary-container text-on-primary font-label-md text-sm font-semibold hover:bg-primary active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-2 min-h-[52px]"
             type="button"
           >
-            {analyzing ? (
-              <>
-                <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-                <span>{t("doc.analyzing")}</span>
-              </>
-            ) : (
-              <>
-                <span>{t("doc.analyzing")}</span>
-                <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
-              </>
-            )}
+            <span>{t("doc.analyzing")}</span>
+            <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
           </button>
         </section>
 
