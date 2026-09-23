@@ -76,8 +76,27 @@ class RetrievalService:
             logger.error(f"Failed to build vector index: {str(e)}")
             raise VectorStoreError(f"Failed to build vector index: {str(e)}")
 
+    def _fallback_keyword_retrieve(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """Fallback keyword retrieval for low-memory environments when PyTorch transformer model cannot load."""
+        if not self.chunks:
+            return []
+        
+        query_words = set(query.lower().split())
+        scored_chunks = []
+        for chunk in self.chunks:
+            text = chunk.get("text", "").lower()
+            # Calculate simple word overlap score
+            matches = sum(1 for word in query_words if len(word) > 2 and word in text)
+            if matches > 0:
+                chunk_copy = chunk.copy()
+                chunk_copy["score"] = round(matches / max(len(query_words), 1), 4)
+                scored_chunks.append(chunk_copy)
+        
+        scored_chunks.sort(key=lambda x: x["score"], reverse=True)
+        return deduplicate_sources(scored_chunks[:top_k])
+
     def retrieve(self, query: str, top_k: Optional[int] = None, threshold: Optional[float] = None) -> List[Dict[str, Any]]:
-        """Retrieves top-k matching chunks for a query from the loaded FAISS index."""
+        """Retrieves top-k matching chunks for a query from the loaded FAISS index or via keyword fallback."""
         if not self.is_loaded():
             loaded = self.load_index()
             if not loaded:
@@ -105,5 +124,6 @@ class RetrievalService:
 
             return deduplicate_sources(results)
         except Exception as e:
-            logger.error(f"Error executing vector retrieval query: {str(e)}")
-            raise VectorStoreError(f"Vector search failed: {str(e)}")
+            logger.warning(f"Vector search failed ({str(e)}). Falling back to keyword search.")
+            return self._fallback_keyword_retrieve(query, top_k)
+
