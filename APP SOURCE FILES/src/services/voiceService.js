@@ -6,8 +6,10 @@ export class VoiceAssistantService {
     this.recognition = null;
     this.isListening = false;
     this.isManuallyStopped = false;
+    this.shouldAutoRestart = true;
     this.lastTranscript = '';
-    
+    this.activeStream = null;
+
     if (typeof window !== 'undefined') {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -36,7 +38,7 @@ export class VoiceAssistantService {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.95;
     utterance.pitch = 1.0;
-    
+
     if (onEnd) {
       utterance.onend = () => {
         console.log("[Voice] Speech synthesis completed.");
@@ -58,62 +60,58 @@ export class VoiceAssistantService {
   }
 
   async requestMicrophonePermission() {
+    console.log("Microphone permission requested");
     if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
-        console.log("[Voice] Requesting microphone permission...");
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Stop temporary track right after permission granted so speech recognition can use audio device
-        stream.getTracks().forEach(track => track.stop());
-        console.log("[Voice] Microphone permission granted.");
+        console.log("Microphone permission granted");
+        // Keep stream active while recognition runs so mic hardware remains enabled
+        this.activeStream = stream;
         return true;
       } catch (err) {
-        console.warn("[Voice] Microphone permission request failed:", err);
+        console.error("Microphone permission error / denied:", err);
         return false;
       }
     }
-    return true; // Fallback if getUserMedia not available directly
+    return true;
   }
 
   async startListening(onResult, onError, onEnd, lang = 'en-US') {
-    console.log("[Voice] Microphone button clicked / startListening requested");
-
     if (!this.isSupported()) {
-      const msg = "Unsupported browser. Please use Google Chrome for voice input.";
-      console.error(`[Voice] ${msg}`);
-      if (onError) onError(msg);
+      const msg = "Speech recognition is not supported in this browser. Please use Google Chrome.";
+      console.error("Recognition error:", msg);
+      if (onError) onError(msg, "unsupported-browser");
       return;
     }
 
-    // Request microphone permission first
+    // Prevent multiple SpeechRecognition instances from running simultaneously
+    if (this.isListening) {
+      console.log("[Voice] Speech recognition already running. Resetting session...");
+      this.stopListening();
+    }
+
+    // Request microphone permission from browser
     const hasPermission = await this.requestMicrophonePermission();
     if (!hasPermission) {
-      const msg = "Microphone permission denied. Please allow microphone access in your browser settings.";
-      console.error(`[Voice] ${msg}`);
-      if (onError) onError(msg);
+      const msg = "Microphone permission was denied. Please allow microphone access in your browser address bar.";
+      console.error("Recognition error: not-allowed");
+      if (onError) onError(msg, "not-allowed");
       return;
     }
 
-    // Reset state flags
     this.isManuallyStopped = false;
+    this.shouldAutoRestart = true;
     this.lastTranscript = '';
+    this.recognition.lang = lang || 'en-US';
 
-    // If already listening, stop current session cleanly before restarting
-    if (this.isListening) {
-      console.log("[Voice] Stopping existing listening session before starting new one...");
-      try { this.recognition.stop(); } catch(e) {}
-    }
-
-    this.isListening = true;
-    this.recognition.lang = lang;
-
-    // MANDATORY REQUIREMENT: Register event handlers BEFORE calling recognition.start()
+    // REGISTER EVENT HANDLERS BEFORE CALLING recognition.start()
     this.recognition.onstart = () => {
-      console.log("[Voice] Recognition started");
+      console.log("Recognition started");
       this.isListening = true;
     };
 
     this.recognition.onresult = (event) => {
-      console.log("[Voice] Speech recognition result received");
+      console.log("Speech result received");
       let interimTranscript = '';
       let finalTranscript = '';
 
@@ -122,55 +120,73 @@ export class VoiceAssistantService {
         const text = result[0].transcript;
         if (result.isFinal) {
           finalTranscript += text + ' ';
-          console.log(`[Voice] Final transcript received: "${text}"`);
         } else {
           interimTranscript += text;
-          console.log(`[Voice] Interim transcript received: "${text}"`);
         }
       }
 
-      const fullTranscript = (finalTranscript + interimTranscript).trim();
-      if (fullTranscript) {
-        this.lastTranscript = fullTranscript;
-        if (onResult) onResult(fullTranscript, finalTranscript.trim());
+      const combined = (finalTranscript + interimTranscript).trim();
+      if (finalTranscript.trim()) {
+        console.log("Final transcript:", finalTranscript.trim());
+      }
+
+      if (combined) {
+        this.lastTranscript = combined;
+        if (onResult) onResult(combined, finalTranscript.trim(), interimTranscript.trim());
       }
     };
 
     this.recognition.onerror = (event) => {
-      console.error(`[Voice] Recognition error: ${event.error}`, event);
+      console.log("Recognition error:", event.error);
       const errType = event.error;
+
+      if (errType === 'no-speech') {
+        // 'no-speech' is non-fatal: allow recognition to continue/restart if user hasn't pressed Stop
+        console.log("[Voice] 'no-speech' detected. Speech recognition will remain active.");
+        return;
+      }
 
       let userMsg = `Speech recognition error: ${errType}`;
       if (errType === 'not-allowed' || errType === 'service-not-allowed') {
-        userMsg = "Microphone permission denied. Please enable microphone access.";
+        userMsg = "Microphone permission was denied. Please allow microphone access in your browser.";
         this.isManuallyStopped = true;
+        this.shouldAutoRestart = false;
       } else if (errType === 'audio-capture') {
-        userMsg = "No microphone hardware detected on your device.";
+        userMsg = "Your browser cannot access the microphone device. Please check audio input hardware.";
         this.isManuallyStopped = true;
-      } else if (errType === 'no-speech') {
-        userMsg = "No speech detected. Please speak clearly into your microphone.";
+        this.shouldAutoRestart = false;
       } else if (errType === 'network') {
         userMsg = "Network error occurred during speech recognition.";
-      } else if (errType === 'aborted') {
-        userMsg = "Speech recognition cancelled.";
       }
 
-      if (errType === 'not-allowed' || errType === 'audio-capture') {
-        this.isListening = false;
-      }
-
+      this.isListening = false;
       if (onError) onError(userMsg, errType);
     };
 
+    this.recognition.onnomatch = () => {
+      console.log("[Voice] Speech onnomatch triggered.");
+    };
+
     this.recognition.onend = () => {
-      console.log("[Voice] Recognition ended");
+      console.log("Recognition ended");
       this.isListening = false;
 
-      // Do NOT automatically restart if user manually stopped
+      // MUST NOT restart recognition after a manual Stop
       if (this.isManuallyStopped) {
-        console.log("[Voice] Recognition stopped manually by user.");
+        console.log("[Voice] Manual stop active. Recognition staying stopped.");
         if (onEnd) onEnd(this.lastTranscript, true);
         return;
+      }
+
+      // If ended naturally or due to no-speech without manual stop, auto-restart
+      if (this.shouldAutoRestart) {
+        console.log("[Voice] Continuous listening active. Auto-restarting recognition instance...");
+        try {
+          this.recognition.start();
+          return;
+        } catch (e) {
+          // ignore
+        }
       }
 
       if (onEnd) onEnd(this.lastTranscript, false);
@@ -179,16 +195,24 @@ export class VoiceAssistantService {
     try {
       this.recognition.start();
     } catch (err) {
-      console.error("[Voice] Exception starting recognition:", err);
+      console.error("Recognition error:", err);
       this.isListening = false;
       if (onError) onError("Failed to start speech recognition.");
     }
   }
 
   stopListening() {
-    console.log("[Voice] stopListening called by user/component.");
+    console.log("[Voice] Setting manual stop flag BEFORE calling recognition.stop()");
     this.isManuallyStopped = true;
+    this.shouldAutoRestart = false;
     this.isListening = false;
+
+    if (this.activeStream) {
+      try {
+        this.activeStream.getTracks().forEach(track => track.stop());
+        this.activeStream = null;
+      } catch (e) {}
+    }
 
     if (this.recognition) {
       try {
@@ -196,9 +220,7 @@ export class VoiceAssistantService {
       } catch (e) {
         try {
           this.recognition.abort();
-        } catch (e2) {
-          // ignore
-        }
+        } catch (e2) {}
       }
     }
   }

@@ -138,10 +138,15 @@ export const ActiveVoiceListeningPage = () => {
             )}
           </div>
 
-          <div className="bg-surface-sand/60 p-4 rounded-2xl border border-border-warm-gray/30">
-            <p className="font-body-md text-sm text-text-charcoal leading-relaxed italic">
-              {spokenQuery ? `"${spokenQuery}"` : "Listening to your voice query..."}
-            </p>
+          <div className="bg-surface-sand/60 p-4 rounded-2xl border border-border-warm-gray/30 flex flex-col gap-2">
+            <textarea
+              id="voiceTranscriptInput"
+              value={spokenQuery}
+              onChange={(e) => setSpokenQuery(e.target.value)}
+              placeholder="Listening... speak into your microphone or edit text here"
+              rows={3}
+              className="w-full bg-transparent font-body-md text-sm text-text-charcoal leading-relaxed focus:outline-none resize-none"
+            />
           </div>
         </section>
 
