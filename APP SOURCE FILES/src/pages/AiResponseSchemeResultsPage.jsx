@@ -38,9 +38,11 @@ export const AiResponseSchemeResultsPage = () => {
       setErrorMsg('');
 
       try {
+        console.log(`[AI RESULTS] query_sent_to_chat: "${queryToSearch}" (language: ${language})`);
         const result = await sendChatMessage(queryToSearch, language);
         if (isMounted) {
           setResponseResult(result);
+          console.log(`[AI RESULTS] assistant_response: "${result.answer?.substring(0, 100)}..." (response_language: ${result.language})`);
           // Play ONLY short voice response, NOT long scheme paragraphs
           const shortVoice = getShortVoiceText(result);
           if (shortVoice) {

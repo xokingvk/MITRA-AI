@@ -37,6 +37,9 @@ export const ActiveVoiceListeningPage = () => {
 
   useEffect(() => {
     isMountedRef.current = true;
+    // Clear any previous query state so user gets a fresh recording
+    setSpokenQuery('');
+    setSearchQuery('');
     startVoiceRecording();
 
     const interval = setInterval(() => {
@@ -70,25 +73,30 @@ export const ActiveVoiceListeningPage = () => {
           if (transcriptText && transcriptText.trim()) {
             finalQuery = transcriptText.trim();
             setSpokenQuery(finalQuery);
+            setSearchQuery(finalQuery);
+            console.log(`[VOICE PIPELINE] transcript: "${finalQuery}"`);
+            console.log(`[VOICE PIPELINE] query_sent_to_chat: "${finalQuery}"`);
+          } else {
+            setVoiceState('error');
+            setUiNotice("Sorry, I couldn't understand the voice recording. Please speak clearly and try again.");
+            return;
           }
         }
       } catch (err) {
-        console.warn("[VOICE UI] Transcription notice:", err);
-        if (!finalQuery) {
-          setVoiceState('error');
-          setUiNotice(err.message || "Voice transcription was unable to recognize speech. Please speak clearly or type your question below.");
-          return;
-        }
+        console.warn("[VOICE UI] Transcription error:", err);
+        setVoiceState('error');
+        setUiNotice(err.message || "Sorry, I couldn't understand the voice recording. Please try again.");
+        return;
       }
     }
 
     if (!finalQuery) {
       setVoiceState('error');
-      setUiNotice("No speech detected in recording. Please speak into your microphone or type your question in the text box below.");
+      setUiNotice("No speech detected in recording. Please speak clearly into your microphone or type your question in the text box below.");
       return;
     }
 
-    // 2. Put transcript into search query and navigate to results page
+    // 2. Navigate to results page with exact transcript
     setSearchQuery(finalQuery);
     if (isMountedRef.current) {
       navigate('/search-results');

@@ -12,20 +12,6 @@ from app.core.language_config import resolve_language, SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
-# Fallback phrase bank for offline/test environments
-SAMPLE_OFFLINE_QUERIES: Dict[str, str] = {
-    "en": "I am pregnant. What health schemes are available for me?",
-    "hi": "मैं गर्भवती हूँ। मेरे लिए कौन सी स्वास्थ्य योजनाएं उपलब्ध हैं?",
-    "ta": "நான் கர்ப்பமாக இருக்கிறேன். எனக்கான அரசு சுகாதாரத் திட்டங்கள் என்ன?",
-    "te": "నేను గర్భవతిని. నాకు అందుబాటులో ఉన్న ఆరోగ్య పథకాలు ఏమిటి?",
-    "kn": "ನಾನು ಗರ್ಭಿಣಿ. ನನಗೆ ಯಾವ ಆರೋಗ್ಯ ಯೋಜನೆಗಳು ಲಭ್ಯವಿವೆ?",
-    "ml": "ഞാൻ ഗർഭിണിയാണ്. എനിക്ക് ലഭ്യമായ ആരോഗ്യ പദ്ധതികൾ ഏതെല്ലാമാണ്?",
-    "mr": "मी गरोदर आहे. माझ्यासाठी कोणत्या आरोग्य योजना उपलब्ध आहेत?",
-    "bn": "আমি গর্ভবতী। আমার জন্য কোন কোন স্বাস্থ্য প্রকল্প রয়েছে?",
-    "gu": "હું સગર્ભા છું. મારા માટે કઈ સ્વાસ્થ્ય યોજનાઓ ઉપલબ્ધ છે?",
-}
-
-
 class VoiceService:
     def __init__(self):
         self.gemini_api_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
@@ -46,7 +32,7 @@ class VoiceService:
     ) -> Dict[str, Any]:
         """
         Transcribes audio bytes to text using Gemini multimodal audio understanding.
-        Accurately preserves the spoken Indian language or English and detects the language.
+        Accurately transcribes verbatim whatever the user actually spoke in their native language or English.
         """
         if not audio_bytes or len(audio_bytes) == 0:
             raise MitraException("Received empty audio recording. Please speak into your microphone and try again.", status_code=400)
@@ -69,24 +55,20 @@ class VoiceService:
         elif "mp3" in effective_mime or "mpeg" in effective_mime:
             effective_mime = "audio/mp3"
 
-        # Debug logging as requested
-        logger.info(f"language_selected: {selected_locale}")
-        logger.info(f"audio_mime_type: {effective_mime}")
+        # Required structured debug logging
+        logger.info(f"VOICE: audio_received = True, audio_mime_type = {effective_mime}, audio_size = {len(audio_bytes)}")
+        logger.info(f"TRANSCRIPTION: language = {selected_locale}")
 
         client = self._get_gemini_client()
         if not client:
-            logger.warning("GEMINI_API_KEY not configured. Using grounded offline voice transcription fallback.")
-            offline_transcript = SAMPLE_OFFLINE_QUERIES.get(canonical_code, SAMPLE_OFFLINE_QUERIES["en"])
-            logger.info(f"language_detected: {selected_locale}")
-            logger.info(f"transcription_success: True (fallback mode: '{offline_transcript}')")
-            return {
-                "transcript": offline_transcript,
-                "language_code": canonical_code,
-                "provider": "gemini-grounded-fallback"
-            }
+            logger.error("GEMINI_API_KEY is not configured in backend environment.")
+            raise MitraException(
+                "Gemini API key is not configured on the backend server. Please set GEMINI_API_KEY to enable voice transcription.",
+                status_code=503
+            )
 
         try:
-            logger.info(f"Transcribing audio ({len(audio_bytes)} bytes) via Gemini ({self.model_name})...")
+            logger.info(f"Sending audio recording ({len(audio_bytes)} bytes) to Gemini ({self.model_name}) for verbatim transcription...")
 
             audio_part = types.Part.from_bytes(
                 data=audio_bytes,
@@ -94,17 +76,16 @@ class VoiceService:
             )
 
             prompt = (
-                f"You are an expert multilingual speech recognition system for Indian languages and English.\n"
-                f"User's interface language context: {selected_lang_name} ({selected_locale}).\n\n"
-                "Instructions:\n"
-                "1. Listen to the audio recording carefully.\n"
-                "2. Transcribe the spoken words verbatim in the exact language spoken by the user.\n"
-                "3. If the user spoke in Tamil, Hindi, Telugu, Kannada, Malayalam, Marathi, Bengali, Gujarati, or English, "
-                "write the transcription in that language's official script.\n"
-                "4. Identify the primary spoken language code (en, hi, ta, te, kn, ml, mr, bn, gu).\n"
-                "5. Return ONLY a valid JSON object matching this schema:\n"
+                f"You are a verbatim speech-to-text transcription engine for Indian languages and English.\n"
+                f"Interface language hint: {selected_lang_name} ({selected_locale}).\n\n"
+                "STRICT TRANSCRIPTION RULES:\n"
+                "1. Transcribe EXACTLY what the user spoke in the audio. Do not summarize, alter, translate, infer, or hallucinate.\n"
+                "2. If spoken in Tamil, Hindi, Telugu, Kannada, Malayalam, Marathi, Bengali, Gujarati, or English, "
+                "transcribe in the native script of that language (e.g. தமிழ், हिंदी, తెలుగు, ಕನ್ನಡ, മലയാളം, मराठी, বাংলা, ગુજરાતી, or English for English speech).\n"
+                "3. If no speech or only noise is detected, return an empty transcript string.\n"
+                "4. Return ONLY a valid JSON object matching this schema:\n"
                 "{\n"
-                '  "transcript": "Exact transcription in spoken native language",\n'
+                '  "transcript": "Exact spoken words verbatim in native script",\n'
                 '  "language_detected": "en | hi | ta | te | kn | ml | mr | bn | gu"\n'
                 "}"
             )
@@ -113,7 +94,7 @@ class VoiceService:
                 model=self.model_name,
                 contents=[audio_part, prompt],
                 config=types.GenerateContentConfig(
-                    temperature=0.1
+                    temperature=0.0
                 )
             )
 
@@ -132,30 +113,28 @@ class VoiceService:
                     transcript = (parsed.get("transcript") or "").strip()
                     detected_lang = parsed.get("language_detected") or canonical_code
             except Exception:
-                transcript = raw_text
+                transcript = raw_text.strip()
 
             if not transcript:
-                transcript = SAMPLE_OFFLINE_QUERIES.get(canonical_code, "Hello")
+                logger.warning("Gemini returned empty transcript for audio.")
+                raise MitraException("Sorry, I couldn't understand the voice recording. Please speak clearly and try again.", status_code=400)
 
             resolved_detected = resolve_language(detected_lang)
-            logger.info(f"language_detected: {resolved_detected['locale']}")
-            logger.info(f"transcription_success: True")
+            logger.info(f"TRANSCRIPTION: transcript = '{transcript}'")
+            logger.info(f"TRANSCRIPTION: language_detected = {resolved_detected['locale']}")
 
             return {
                 "transcript": transcript,
                 "language_code": resolved_detected["code"],
+                "locale": resolved_detected["locale"],
                 "provider": "gemini"
             }
 
+        except MitraException:
+            raise
         except Exception as e:
-            logger.error(f"Gemini audio transcription error: {str(e)}")
-            logger.info("transcription_success: False")
-            fallback_text = SAMPLE_OFFLINE_QUERIES.get(canonical_code, SAMPLE_OFFLINE_QUERIES["en"])
-            return {
-                "transcript": fallback_text,
-                "language_code": canonical_code,
-                "provider": "gemini-offline-recovery"
-            }
+            logger.error(f"Gemini audio transcription failed: {str(e)}")
+            raise MitraException(f"Sorry, I couldn't understand the voice recording: {str(e)}. Please try again.", status_code=500)
 
     async def synthesize_speech(
         self,
@@ -174,12 +153,12 @@ class VoiceService:
         target_locale = lang_info["locale"]
         
         # Debug log for response language
-        logger.info(f"response_language: {target_locale}")
+        logger.info(f"TTS: tts_language = {target_locale}")
 
         client = self._get_gemini_client()
         if not client:
             logger.info("Gemini API key not configured. Signalling frontend browser TTS fallback.")
-            logger.info("tts_success: False (offline fallback)")
+            logger.info("TTS: tts_success = False (offline fallback)")
             return {
                 "audio_base64": None,
                 "format": "wav",
@@ -224,7 +203,7 @@ class VoiceService:
 
             if not raw_audio_bytes:
                 logger.warning("Gemini did not return inline audio data. Falling back to browser TTS.")
-                logger.info("tts_success: False")
+                logger.info("TTS: tts_success = False")
                 return {
                     "audio_base64": None,
                     "format": "wav",
@@ -244,7 +223,7 @@ class VoiceService:
                 final_audio_bytes = raw_audio_bytes
 
             audio_b64 = base64.b64encode(final_audio_bytes).decode("utf-8")
-            logger.info(f"tts_success: True (generated {len(final_audio_bytes)} audio bytes)")
+            logger.info(f"TTS: tts_success = True ({len(final_audio_bytes)} audio bytes generated)")
 
             return {
                 "audio_base64": audio_b64,
@@ -254,7 +233,7 @@ class VoiceService:
 
         except Exception as e:
             logger.error(f"Gemini native TTS audio synthesis error: {str(e)}")
-            logger.info("tts_success: False")
+            logger.info("TTS: tts_success = False")
             return {
                 "audio_base64": None,
                 "format": "wav",

@@ -59,6 +59,7 @@ class ChatService:
             temp_context_str = self.document_service.get_temporary_document_context(request.temp_document_id)
 
         # 4. Generate answer using Google Gemini
+        logger.info(f"QUERY: query_sent_to_chat = '{user_message}'")
         sources: List[SourceReference] = []
         try:
             gemini_result = self.gemini_service.generate_chat_response(
@@ -99,6 +100,9 @@ class ChatService:
             voice_text = "I found schemes that may be relevant to you. You can see them on the screen."
             scheme_cards = []
             needs_more_info = ["Annual household income", "State of residence"]
+
+        logger.info(f"RESPONSE: response_language = '{lang_code}'")
+        logger.info(f"RESPONSE: assistant_response = '{answer_text}'")
 
         # 5. Record turn in conversation memory
         self.conversation_service.add_turn(conversation_id, "user", user_message)
