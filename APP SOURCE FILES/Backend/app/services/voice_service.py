@@ -29,17 +29,34 @@ class VoiceService:
 
     def _convert_to_wav(self, audio_bytes: bytes, original_mime: str, ext: str) -> bytes:
         """
-        Converts any input audio format (such as browser audio/webm, ogg, mp4) into standard
-        16kHz 16-bit mono PCM audio/wav using bundled static FFmpeg via imageio-ffmpeg.
-        If the audio is already a standard WAV, returns the original bytes.
+        Robustly converts any input audio format (such as mobile browser audio/webm;codecs=opus,
+        iOS Safari audio/mp4, Firefox audio/ogg, MP3, etc.) into standard 16kHz 16-bit mono PCM audio/wav.
+        Uses imageio-ffmpeg bundled static binary with multi-strategy fallback.
         """
-        # If it is already a WAV file and starts with standard RIFF header, return directly
-        if (ext == "wav" or "wav" in original_mime.lower()) and audio_bytes.startswith(b"RIFF"):
-            logger.info("Audio is already standard WAV container.")
+        if not audio_bytes or len(audio_bytes) == 0:
+            raise MitraException("Received empty audio recording. Please speak into your microphone and try again.", status_code=400)
+
+        header = audio_bytes[:32]
+        first_bytes_hex = header[:16].hex()
+
+        # 1. If it is already a WAV file and starts with standard RIFF/WAVE header, return directly
+        if header.startswith(b"RIFF") and b"WAVE" in header[:16]:
+            logger.info("Audio is already a valid standard WAV file (RIFF/WAVE header verified).")
             return audio_bytes
 
-        tmp_in = None
-        tmp_out = None
+        # 2. Detect container from magic bytes or MIME
+        detected_ext = ext
+        if header.startswith(b"\x1aE\xdf\xa3"):
+            detected_ext = "webm"
+        elif header.startswith(b"OggS"):
+            detected_ext = "ogg"
+        elif b"ftyp" in header[:16] or "mp4" in original_mime.lower() or "m4a" in original_mime.lower():
+            detected_ext = "mp4"
+        elif header.startswith(b"ID3") or header.startswith(b"\xff\xfb") or "mp3" in original_mime.lower():
+            detected_ext = "mp3"
+        elif "wav" in original_mime.lower():
+            detected_ext = "wav"
+
         ffmpeg_exe = "ffmpeg"
         try:
             import imageio_ffmpeg
@@ -47,35 +64,82 @@ class VoiceService:
         except Exception as err:
             logger.warning(f"imageio_ffmpeg notice ({err}), checking system ffmpeg...")
 
+        tmp_in = None
+        tmp_out = None
+
         try:
-            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f_in:
+            with tempfile.NamedTemporaryFile(suffix=f".{detected_ext}", delete=False) as f_in:
                 f_in.write(audio_bytes)
                 tmp_in = f_in.name
 
             tmp_out = tmp_in + "_converted.wav"
 
-            # FFmpeg: Convert input audio to 16kHz, 16-bit, 1 channel (mono) PCM WAV
-            cmd = [
-                ffmpeg_exe,
-                "-y",
-                "-i", tmp_in,
-                "-vn",
-                "-acodec", "pcm_s16le",
-                "-ar", "16000",
-                "-ac", "1",
-                tmp_out
+            # Multi-strategy conversion pipeline
+            strategies = [
+                # Strategy 1: Auto-probe with error tolerance and generous probe size
+                [
+                    ffmpeg_exe, "-y",
+                    "-err_detect", "ignore_err",
+                    "-probesize", "10M",
+                    "-analyzeduration", "10M",
+                    "-i", tmp_in,
+                    "-vn",
+                    "-acodec", "pcm_s16le",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    tmp_out
+                ],
+                # Strategy 2: Explicit Matroska/WebM demuxer
+                [
+                    ffmpeg_exe, "-y",
+                    "-f", "matroska,webm",
+                    "-err_detect", "ignore_err",
+                    "-i", tmp_in,
+                    "-vn",
+                    "-acodec", "pcm_s16le",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    tmp_out
+                ],
+                # Strategy 3: Standard FFmpeg conversion
+                [
+                    ffmpeg_exe, "-y",
+                    "-i", tmp_in,
+                    "-vn",
+                    "-acodec", "pcm_s16le",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    tmp_out
+                ]
             ]
 
-            logger.info(f"Running audio conversion with FFmpeg: {ext} ({original_mime}) -> WAV (16kHz 16-bit mono)...")
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-            
-            if result.returncode != 0 or not os.path.exists(tmp_out) or os.path.getsize(tmp_out) == 0:
-                stderr_msg = result.stderr.decode("utf-8", errors="ignore")
-                logger.error(f"FFmpeg audio conversion failed (code {result.returncode}): {stderr_msg}")
-                raise MitraException(f"Audio conversion error: FFmpeg failed to parse {original_mime} recording.", status_code=400)
+            converted_bytes = None
+            last_returncode = -1
+            last_stderr = ""
 
-            with open(tmp_out, "rb") as f_out:
-                converted_bytes = f_out.read()
+            for idx, cmd in enumerate(strategies):
+                logger.info(f"Executing audio conversion strategy {idx + 1} with FFmpeg ({detected_ext} -> WAV)...")
+                result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                last_returncode = result.returncode
+                last_stderr = result.stderr.decode("utf-8", errors="ignore")
+
+                if result.returncode == 0 and os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 44:
+                    with open(tmp_out, "rb") as f_out:
+                        converted_bytes = f_out.read()
+                    logger.info(f"FFmpeg conversion succeeded on strategy {idx + 1} ({len(converted_bytes)} bytes WAV generated).")
+                    break
+                else:
+                    logger.warning(f"Strategy {idx + 1} failed (returncode {result.returncode}).")
+
+            if not converted_bytes or len(converted_bytes) <= 44:
+                logger.error(
+                    f"AUDIO CONVERSION ERROR: original_mime={original_mime}, "
+                    f"original_size={len(audio_bytes)}, "
+                    f"first_bytes_hex={first_bytes_hex}, "
+                    f"returncode={last_returncode}, "
+                    f"stderr={last_stderr[-400:] if last_stderr else 'none'}"
+                )
+                raise MitraException("Sorry, I couldn't process the audio recording from your microphone. Please speak clearly and try again.", status_code=400)
 
             return converted_bytes
 
@@ -83,18 +147,14 @@ class VoiceService:
             raise
         except Exception as e:
             logger.error(f"Audio conversion exception: {str(e)}")
-            raise MitraException(f"Failed to convert {original_mime} audio recording: {str(e)}", status_code=400)
+            raise MitraException("Sorry, I couldn't process the audio recording from your microphone. Please speak clearly and try again.", status_code=400)
         finally:
             if tmp_in and os.path.exists(tmp_in):
-                try:
-                    os.remove(tmp_in)
-                except Exception:
-                    pass
+                try: os.remove(tmp_in)
+                except Exception: pass
             if tmp_out and os.path.exists(tmp_out):
-                try:
-                    os.remove(tmp_out)
-                except Exception:
-                    pass
+                try: os.remove(tmp_out)
+                except Exception: pass
 
     async def transcribe_audio(
         self,
@@ -135,6 +195,7 @@ class VoiceService:
         logger.info("audio_received=True")
         logger.info(f"transcription_model={self.transcribe_model}")
         logger.info(f"original_mime_type={original_mime}")
+        logger.info(f"original_filename={filename}")
         logger.info(f"original_audio_size={original_size}")
         logger.info(f"language_requested={selected_locale}")
 

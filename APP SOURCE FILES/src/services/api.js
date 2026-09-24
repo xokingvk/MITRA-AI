@@ -142,7 +142,7 @@ export async function transcribeVoice(audioBlob, language = "en") {
     console.log(`[API] audio_mime_type: ${audioBlob.type || 'audio/webm'}`);
 
     const formData = new FormData();
-    const fileExt = audioBlob.type?.includes("mp4") ? "mp4" : audioBlob.type?.includes("wav") ? "wav" : "webm";
+    const fileExt = audioBlob.type?.includes("mp4") ? "mp4" : audioBlob.type?.includes("wav") ? "wav" : audioBlob.type?.includes("ogg") ? "ogg" : "webm";
     formData.append("file", audioBlob, `voice_recording.${fileExt}`);
     formData.append("language_code", locale);
 

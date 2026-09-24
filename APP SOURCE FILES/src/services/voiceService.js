@@ -73,24 +73,35 @@ export class VoiceAssistantService {
 
     const stream = await this.requestMicrophonePermission();
 
-    // Select supported audio mime type
-    let mimeType = 'audio/webm';
-    if (typeof MediaRecorder.isTypeSupported === 'function') {
-      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        mimeType = 'audio/webm;codecs=opus';
-      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4';
-      } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-        mimeType = 'audio/ogg';
+    // Select supported audio mime type in priority order
+    const candidateMimes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/wav'
+    ];
+    let selectedMimeType = '';
+    if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function') {
+      for (const candidate of candidateMimes) {
+        if (MediaRecorder.isTypeSupported(candidate)) {
+          selectedMimeType = candidate;
+          break;
+        }
       }
     }
 
     try {
-      this.mediaRecorder = new MediaRecorder(stream, { mimeType });
+      this.mediaRecorder = selectedMimeType
+        ? new MediaRecorder(stream, { mimeType: selectedMimeType })
+        : new MediaRecorder(stream);
     } catch (e) {
-      // Fallback without explicit mimeType
+      console.warn("[VOICE] MediaRecorder initialization with explicit MIME failed, using browser default:", e);
       this.mediaRecorder = new MediaRecorder(stream);
     }
+
+    this.selectedMimeType = this.mediaRecorder.mimeType || selectedMimeType || 'audio/webm';
 
     this.mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
@@ -100,11 +111,12 @@ export class VoiceAssistantService {
     };
 
     this.mediaRecorder.onstart = () => {
-      console.log(`[VOICE] MediaRecorder started (mimeType: ${this.mediaRecorder.mimeType}).`);
+      console.log(`[VOICE] MediaRecorder started. selectedMimeType="${this.selectedMimeType}", actualMimeType="${this.mediaRecorder.mimeType}".`);
       this.isRecording = true;
     };
 
-    this.mediaRecorder.start(250); // Slice data every 250ms
+    // Continuous recording delivers clean, unfragmented container headers upon stop
+    this.mediaRecorder.start();
   }
 
   async stopRecording() {
@@ -117,13 +129,21 @@ export class VoiceAssistantService {
       }
 
       this.mediaRecorder.onstop = () => {
-        console.log("[VOICE] MediaRecorder stopped. Processing recorded audio chunks...");
         this.isRecording = false;
-        const mimeType = this.mediaRecorder?.mimeType || 'audio/webm';
-        const audioBlob = new Blob(this.audioChunks, { type: mimeType });
+        const actualMime = this.mediaRecorder?.mimeType || this.selectedMimeType || 'audio/webm';
+        const chunkCount = this.audioChunks.length;
+        const audioBlob = new Blob(this.audioChunks, { type: actualMime });
+
+        console.log(`[VOICE] Recording stopped. chunks=${chunkCount}, blob_size=${audioBlob.size} bytes, blob_type="${audioBlob.type}"`);
+
         this.cleanupStream();
         this.audioChunks = [];
-        resolve(audioBlob);
+
+        if (audioBlob.size === 0) {
+          reject(new Error("No audio was recorded. Please speak clearly into your microphone."));
+        } else {
+          resolve(audioBlob);
+        }
       };
 
       this.mediaRecorder.onerror = (err) => {
@@ -134,6 +154,11 @@ export class VoiceAssistantService {
       };
 
       try {
+        if (this.mediaRecorder.state === 'recording') {
+          try {
+            this.mediaRecorder.requestData();
+          } catch (e) {}
+        }
         this.mediaRecorder.stop();
       } catch (err) {
         this.cleanupStream();
