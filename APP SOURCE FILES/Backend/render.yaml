@@ -2,7 +2,7 @@ services:
   - type: web
     name: mitra-ai-backend
     env: python
-    buildCommand: pip install torch --extra-index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -11,13 +11,11 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
-      - key: VECTOR_STORE_PATH
-        value: data/vector_store
-      - key: PERMANENT_DOCUMENT_PATH
-        value: data/permanent_documents
       - key: TEMPORARY_DOCUMENT_PATH
         value: data/temporary_documents
-      - key: RAG_TOP_K
-        value: "5"
-      - key: RAG_SCORE_THRESHOLD
-        value: "0.35"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO

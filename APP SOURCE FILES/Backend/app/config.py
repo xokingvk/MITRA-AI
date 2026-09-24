@@ -6,7 +6,7 @@ from typing import List
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
-    APP_NAME: str = "MITRA AI Master RAG Backend"
+    APP_NAME: str = "MITRA AI Gemini Assistant Backend"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
     
@@ -14,22 +14,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
     
-    # RAG & Embedding Settings
-    EMBEDDING_MODEL_NAME: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    RAG_TOP_K: int = 5
-    RAG_SCORE_THRESHOLD: float = 0.35
-    
-    # Paths
-    VECTOR_STORE_PATH: str = str(BASE_DIR / "data" / "vector_store")
-    PERMANENT_DOCUMENT_PATH: str = str(BASE_DIR / "data" / "permanent_documents")
+    # Temporary Document Processing Path
     TEMPORARY_DOCUMENT_PATH: str = str(BASE_DIR / "data" / "temporary_documents")
     
-    # Sarvam Configuration
-    SARVAM_API_KEY: str = ""
-    SARVAM_STT_MODEL: str = "saaras:v2"
-    SARVAM_TTS_MODEL: str = "bulbul:v1"
-    
-    # CORS
+    # CORS Configuration
     CORS_ORIGINS: str = "*"
 
     model_config = SettingsConfigDict(

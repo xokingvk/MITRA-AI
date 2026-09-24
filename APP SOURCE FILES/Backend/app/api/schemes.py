@@ -1,27 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any, List
 from app.models.scheme_models import EligibilityCriteriaRequest, EligibilityGuidanceResponse
-from app.dependencies import get_eligibility_service, get_retrieval_service
+from app.dependencies import get_eligibility_service
 from app.services.eligibility_service import EligibilityService
-from app.services.retrieval_service import RetrievalService
 
 router = APIRouter(prefix="/api/schemes", tags=["Health Schemes & Eligibility"])
 
-@router.get("", summary="Get indexed health schemes summary")
-def get_schemes_summary(
-    retrieval_service: RetrievalService = Depends(get_retrieval_service)
-) -> Dict[str, Any]:
-    """Returns summary statistics and metadata of indexed health schemes."""
-    if not retrieval_service.is_loaded():
-        retrieval_service.load_index()
-
-    chunks = retrieval_service.chunks
-    distinct_sources = sorted(list(set(c.get("source", "health_schemes.pdf") for c in chunks)))
-
+@router.get("", summary="Get available health schemes directory summary")
+def get_schemes_summary() -> Dict[str, Any]:
+    """Returns summary statistics of available Indian health schemes."""
     return {
         "status": "active",
-        "total_indexed_chunks": len(chunks),
-        "source_documents": distinct_sources,
+        "schemes_coverage": "All Central & State Health Welfare Programs",
+        "primary_schemes": [
+            "Ayushman Bharat - PM-JAY",
+            "AB-PMJAY Senior Citizen 70+ Coverage",
+            "Pradhan Mantri Matru Vandana Yojana (PMMVY)",
+            "Janani Suraksha Yojana (JSY)",
+            "Rashtriya Arogya Nidhi (RAN)",
+            "State Chief Minister Health Assurance Schemes"
+        ],
         "supported_languages": [
             "English (en)", "Hindi (hi)", "Tamil (ta)", "Telugu (te)",
             "Kannada (kn)", "Malayalam (ml)", "Marathi (mr)", "Bengali (bn)", "Gujarati (gu)"
@@ -35,7 +33,7 @@ def evaluate_eligibility_endpoint(
 ) -> EligibilityGuidanceResponse:
     """
     Evaluates user profile criteria (age, state, income, category, disability, gender)
-    against retrieved scheme criteria and returns grounded guidance.
+    against health scheme criteria using Gemini reasoning.
     """
     try:
         response = eligibility_service.evaluate_eligibility(request)

@@ -18,7 +18,7 @@ export async function sendChatMessage(message, language = "en", sessionId = null
       body: JSON.stringify({
         message,
         language,
-        session_id: sessionId,
+        conversation_id: sessionId,
       }),
     });
 

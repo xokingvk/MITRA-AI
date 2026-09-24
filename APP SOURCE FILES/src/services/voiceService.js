@@ -31,6 +31,11 @@ export class VoiceAssistantService {
 
   async requestMicrophonePermission() {
     console.log("[VOICE] Requesting microphone access via getUserMedia...");
+    
+    if (!this.isSecureContext()) {
+      throw new Error("Microphone recording requires HTTPS on mobile. Deploy the frontend using an HTTPS URL.");
+    }
+
     if (!this.isSupported()) {
       throw new Error("Microphone recording is not supported in this browser.");
     }

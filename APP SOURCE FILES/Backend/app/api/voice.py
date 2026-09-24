@@ -21,7 +21,7 @@ class SynthesisResponse(BaseModel):
 class TranscriptionResponse(BaseModel):
     transcript: str = Field(..., description="Recognized speech text")
     language_code: Optional[str] = Field("en-IN", description="Resolved language code")
-    provider: Optional[str] = Field("sarvam", description="STT Provider used")
+    provider: Optional[str] = Field("gemini", description="STT Provider used")
 
 @router.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_voice(
@@ -30,7 +30,7 @@ async def transcribe_voice(
     voice_service: VoiceService = Depends(get_voice_service)
 ):
     """
-    Receives recorded audio from the browser, transcribes it via Sarvam STT / Gemini audio understanding,
+    Receives recorded audio from the browser, transcribes it via Gemini audio understanding,
     and returns the recognized text for injection into the chat pipeline.
     """
     try:
@@ -57,7 +57,7 @@ async def synthesize_speech(
     voice_service: VoiceService = Depends(get_voice_service)
 ):
     """
-    Synthesizes text into audio using Sarvam TTS. Returns base64 audio data.
+    Synthesizes text into speech audio. Returns base64 audio data or browser TTS fallback signal.
     """
     try:
         result = await voice_service.synthesize_speech(
