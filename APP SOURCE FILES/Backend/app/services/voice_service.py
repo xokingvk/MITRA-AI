@@ -5,7 +5,8 @@ import json
 import base64
 import logging
 import tempfile
-from typing import Optional, Dict, Any
+import subprocess
+from typing import Optional, Dict, Any, Tuple
 from google import genai
 from google.genai import types
 from app.config import settings
@@ -26,6 +27,75 @@ class VoiceService:
             return None
         return genai.Client(api_key=self.gemini_api_key)
 
+    def _convert_to_wav(self, audio_bytes: bytes, original_mime: str, ext: str) -> bytes:
+        """
+        Converts any input audio format (such as browser audio/webm, ogg, mp4) into standard
+        16kHz 16-bit mono PCM audio/wav using bundled static FFmpeg via imageio-ffmpeg.
+        If the audio is already a standard WAV, returns the original bytes.
+        """
+        # If it is already a WAV file and starts with standard RIFF header, return directly
+        if (ext == "wav" or "wav" in original_mime.lower()) and audio_bytes.startswith(b"RIFF"):
+            logger.info("Audio is already standard WAV container.")
+            return audio_bytes
+
+        tmp_in = None
+        tmp_out = None
+        ffmpeg_exe = "ffmpeg"
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as err:
+            logger.warning(f"imageio_ffmpeg notice ({err}), checking system ffmpeg...")
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f_in:
+                f_in.write(audio_bytes)
+                tmp_in = f_in.name
+
+            tmp_out = tmp_in + "_converted.wav"
+
+            # FFmpeg: Convert input audio to 16kHz, 16-bit, 1 channel (mono) PCM WAV
+            cmd = [
+                ffmpeg_exe,
+                "-y",
+                "-i", tmp_in,
+                "-vn",
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                tmp_out
+            ]
+
+            logger.info(f"Running audio conversion with FFmpeg: {ext} ({original_mime}) -> WAV (16kHz 16-bit mono)...")
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            
+            if result.returncode != 0 or not os.path.exists(tmp_out) or os.path.getsize(tmp_out) == 0:
+                stderr_msg = result.stderr.decode("utf-8", errors="ignore")
+                logger.error(f"FFmpeg audio conversion failed (code {result.returncode}): {stderr_msg}")
+                raise MitraException(f"Audio conversion error: FFmpeg failed to parse {original_mime} recording.", status_code=400)
+
+            with open(tmp_out, "rb") as f_out:
+                converted_bytes = f_out.read()
+
+            return converted_bytes
+
+        except MitraException:
+            raise
+        except Exception as e:
+            logger.error(f"Audio conversion exception: {str(e)}")
+            raise MitraException(f"Failed to convert {original_mime} audio recording: {str(e)}", status_code=400)
+        finally:
+            if tmp_in and os.path.exists(tmp_in):
+                try:
+                    os.remove(tmp_in)
+                except Exception:
+                    pass
+            if tmp_out and os.path.exists(tmp_out):
+                try:
+                    os.remove(tmp_out)
+                except Exception:
+                    pass
+
     async def transcribe_audio(
         self,
         audio_bytes: bytes,
@@ -35,7 +105,7 @@ class VoiceService:
     ) -> Dict[str, Any]:
         """
         Transcribes audio bytes to verbatim text using Gemini 3.5 Transcribe (Interactions API & Files upload).
-        Accurately transcribes verbatim whatever the user actually spoke in their native language or English.
+        Converts browser WebM or other formats to standard WAV before sending to Gemini.
         """
         if not audio_bytes or len(audio_bytes) == 0:
             raise MitraException("Received empty audio recording. Please speak into your microphone and try again.", status_code=400)
@@ -45,33 +115,41 @@ class VoiceService:
         selected_locale = lang_info["locale"]
         canonical_code = lang_info["code"]
 
-        # Determine standard MIME type and file extension for Gemini
-        effective_mime = mime_type or "audio/webm"
+        original_mime = mime_type or "audio/webm"
+        original_size = len(audio_bytes)
         ext = "webm"
-        if "webm" in effective_mime:
-            effective_mime = "audio/webm"
-            ext = "webm"
-        elif "mp4" in effective_mime or "m4a" in effective_mime:
-            effective_mime = "audio/mp4"
-            ext = "mp4"
-        elif "wav" in effective_mime:
-            effective_mime = "audio/wav"
+        if "wav" in original_mime.lower():
             ext = "wav"
-        elif "ogg" in effective_mime:
-            effective_mime = "audio/ogg"
+        elif "mp4" in original_mime.lower() or "m4a" in original_mime.lower():
+            ext = "mp4"
+        elif "ogg" in original_mime.lower():
             ext = "ogg"
-        elif "mp3" in effective_mime or "mpeg" in effective_mime:
-            effective_mime = "audio/mp3"
+        elif "mp3" in original_mime.lower():
             ext = "mp3"
+        elif filename and "." in filename:
+            ext = filename.split(".")[-1].lower()
 
-        # Explicit Runtime Test Log Markers
+        # Explicit Runtime Diagnostic Logs
         logger.info("VOICE_TEST_START")
         logger.info("endpoint=/api/voice/transcribe")
         logger.info("audio_received=True")
         logger.info(f"transcription_model={self.transcribe_model}")
-        logger.info(f"audio_mime_type={effective_mime}")
-        logger.info(f"audio_size={len(audio_bytes)}")
+        logger.info(f"original_mime_type={original_mime}")
+        logger.info(f"original_audio_size={original_size}")
         logger.info(f"language_requested={selected_locale}")
+
+        # Perform server-side audio conversion to standard WAV
+        try:
+            converted_audio_bytes = self._convert_to_wav(audio_bytes, original_mime, ext)
+            converted_mime = "audio/wav"
+            converted_size = len(converted_audio_bytes)
+            logger.info(f"converted_mime_type={converted_mime}")
+            logger.info(f"converted_audio_size={converted_size}")
+            logger.info("conversion_success=True")
+        except Exception as conv_err:
+            logger.info("conversion_success=False")
+            logger.info("VOICE_TEST_END")
+            raise
 
         client = self._get_gemini_client()
         if not client:
@@ -87,18 +165,18 @@ class VoiceService:
         uploaded_file = None
 
         try:
-            # 1. Write audio bytes to temporary file on disk for Gemini Files upload
-            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp_file:
-                tmp_file.write(audio_bytes)
+            # 1. Write converted standard WAV bytes to temporary file on disk for Gemini Files upload
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                tmp_file.write(converted_audio_bytes)
                 tmp_audio_path = tmp_file.name
 
-            # 2. Upload audio using client.files.upload(...)
-            logger.info(f"Uploading audio file ({len(audio_bytes)} bytes) to Gemini Files API for {self.transcribe_model}...")
+            # 2. Upload converted audio using client.files.upload(...) with matching audio/wav MIME type
+            logger.info(f"Uploading converted WAV audio ({len(converted_audio_bytes)} bytes) to Gemini Files API for {self.transcribe_model}...")
             uploaded_file = client.files.upload(
                 file=tmp_audio_path,
                 config=types.UploadFileConfig(
-                    mime_type=effective_mime,
-                    display_name=f"voice_recording_{selected_locale}.{ext}"
+                    mime_type="audio/wav",
+                    display_name=f"voice_recording_{selected_locale}.wav"
                 )
             )
             logger.info(f"Audio file uploaded successfully (URI: {uploaded_file.uri}, Name: {uploaded_file.name})")
@@ -110,7 +188,7 @@ class VoiceService:
                     {
                         "type": "audio",
                         "uri": uploaded_file.uri,
-                        "mime_type": uploaded_file.mime_type or effective_mime,
+                        "mime_type": uploaded_file.mime_type or "audio/wav",
                     }
                 ],
             }

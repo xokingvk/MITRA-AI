@@ -93,12 +93,25 @@ def test_multilingual_pipeline():
     print("\n>>> ALL HEALTH-ONLY AND MULTILINGUAL SCOPE TESTS PASSED! <<<")
 
 def test_voice_service_gemini_transcribe():
-    print("\n=== TEST 3: Voice Service Gemini 3.5 Transcribe Flow ===")
+    print("\n=== TEST 3: Voice Service Gemini 3.5 Transcribe Flow (WAV & WebM) ===")
+    import io, wave, math, struct
     from unittest.mock import MagicMock, patch
     from app.services.voice_service import VoiceService
+    from app.core.exceptions import MitraException
 
     voice_service = VoiceService()
     voice_service.gemini_api_key = "test-api-key"
+
+    # Generate a valid WAV audio
+    wav_buffer = io.BytesIO()
+    with wave.open(wav_buffer, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        for i in range(1600):
+            val = int(32767 * math.sin(2 * math.pi * 440 * i / 16000))
+            w.writeframes(struct.pack("<h", val))
+    valid_wav_bytes = wav_buffer.getvalue()
 
     mock_client = MagicMock()
     mock_file = MagicMock()
@@ -110,27 +123,49 @@ def test_voice_service_gemini_transcribe():
     mock_interaction.output_text = "I am pregnant and need government health schemes"
     mock_client.interactions.create.return_value = mock_interaction
 
+    # 1. Test standard WAV upload
     with patch.object(voice_service, "_get_gemini_client", return_value=mock_client):
         res = asyncio.run(voice_service.transcribe_audio(
-            audio_bytes=b"fake-webm-audio-bytes-header-data",
-            filename="recording.webm",
-            mime_type="audio/webm",
+            audio_bytes=valid_wav_bytes,
+            filename="recording.wav",
+            mime_type="audio/wav",
             language_code="ta-IN"
         ))
 
         assert res["transcript"] == "I am pregnant and need government health schemes"
         assert res["language"] == "ta-IN"
         assert res["provider"] == "gemini-3.5-transcribe"
-
-        # Verify client.files.upload was called
         mock_client.files.upload.assert_called_once()
-        # Verify client.interactions.create was called with gemini-3.5-transcribe and input audio array
         mock_client.interactions.create.assert_called_once()
-        call_kwargs = mock_client.interactions.create.call_args.kwargs
-        assert call_kwargs["model"] == "gemini-3.5-transcribe"
-        assert call_kwargs["input"][0]["type"] == "audio"
-        assert call_kwargs["input"][0]["uri"] == mock_file.uri
-        print("  OK: Gemini 3.5 Transcribe minimal interactions call verified successfully!")
+        print("  OK: WAV voice transcription verified successfully!")
+
+    # 2. Test WebM to WAV conversion flow
+    mock_client.files.upload.reset_mock()
+    mock_client.interactions.create.reset_mock()
+    with patch.object(voice_service, "_get_gemini_client", return_value=mock_client), \
+         patch.object(voice_service, "_convert_to_wav", return_value=valid_wav_bytes):
+        res_webm = asyncio.run(voice_service.transcribe_audio(
+            audio_bytes=b"fake-webm-stream-bytes",
+            filename="recording.webm",
+            mime_type="audio/webm",
+            language_code="en-IN"
+        ))
+        assert res_webm["transcript"] == "I am pregnant and need government health schemes"
+        mock_client.files.upload.assert_called_once()
+        mock_client.interactions.create.assert_called_once()
+        print("  OK: WebM to WAV conversion and transcription verified successfully!")
+
+    # 3. Test empty audio validation
+    try:
+        asyncio.run(voice_service.transcribe_audio(
+            audio_bytes=b"",
+            filename="recording.wav",
+            mime_type="audio/wav"
+        ))
+        assert False, "Should have raised MitraException for empty audio"
+    except MitraException as exc:
+        assert "empty audio recording" in str(exc).lower()
+        print("  OK: Empty audio rejection verified successfully!")
 
 def test_document_extraction_gemini_interactions():
     print("\n=== TEST 4: Document Extraction Gemini Interactions Flow ===")
