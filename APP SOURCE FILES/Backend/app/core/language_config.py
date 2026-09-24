@@ -6,7 +6,7 @@ SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
     "hi": {"code": "hi", "locale": "hi-IN", "name": "Hindi", "native_name": "हिंदी"},
     "ta": {"code": "ta", "locale": "ta-IN", "name": "Tamil", "native_name": "தமிழ்"},
     "te": {"code": "te", "locale": "te-IN", "name": "Telugu", "native_name": "తెలుగు"},
-    "kn": {"code": "kn", "locale": "kn-IN", "name": "Kannada", "native_name": "கன்னட/ಕನ್ನಡ"},
+    "kn": {"code": "kn", "locale": "kn-IN", "name": "Kannada", "native_name": "ಕನ್ನಡ"},
     "ml": {"code": "ml", "locale": "ml-IN", "name": "Malayalam", "native_name": "മലയാളം"},
     "mr": {"code": "mr", "locale": "mr-IN", "name": "Marathi", "native_name": "मराठी"},
     "bn": {"code": "bn", "locale": "bn-IN", "name": "Bengali", "native_name": "বাংলা"},
@@ -31,7 +31,7 @@ def resolve_language(lang_input: str) -> Dict[str, str]:
     if not lang_input:
         return SUPPORTED_LANGUAGES["en"]
     
-    clean_input = lang_input.strip().lower()
+    clean_input = str(lang_input).strip().lower()
     canonical_code = LANGUAGE_ALIASES.get(clean_input, "en")
     return SUPPORTED_LANGUAGES.get(canonical_code, SUPPORTED_LANGUAGES["en"])
 
@@ -41,8 +41,8 @@ GREETING_MESSAGES: Dict[str, str] = {
     "hi": "नमस्ते! मैं मित्रा एआई हूं, आपका स्वास्थ्य योजना सहायक। आज मैं आपकी क्या सहायता कर सकता हूं?",
     "ta": "வணக்கம்! நான் மித்ரா AI, உங்கள் அரசு சுகாதாரத் திட்ட உதவியாளன். உங்களுக்கு எவ்வாறு உதவலாம்?",
     "te": "నమస్కారం! నేను మిత్రా AI, మీ ఆరోగ్య పథకం సహాయకుడిని. నేడు నేను మీకు ఎలా సహాయపడగలను?",
-    "kn": "நமஸ்கார! நான் மித்ரா AI. இன்று உங்களுக்கு எப்படி உதவ முடியும்?",
-    "ml": "നമസ്കാരം! ഞാൻ മിത്ര AI ആണ്. കേന്ദ്ര-സംസ്ഥാന ആരോഗ്യ പദ്ധതികളെക്കുറിച്ച് അറിയാൻ എങ്ങനെ സഹായിക്കണം?",
+    "kn": "ನಮಸ್ಕಾರ! ನಾನು ಮಿತ್ರ AI, ನಿಮ್ಮ ಸರ್ಕಾರಿ ಆರೋಗ್ಯ ಯೋಜನೆಗಳ ಸಹಾಯಕ. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?",
+    "ml": "നമസ്കാരം! ഞാൻ മിത്ര AI ആണ്, നിങ്ങളുടെ ആരോഗ്യ പദ്ധതി സഹായി. ഇന്ന് ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കണം?",
     "mr": "नमस्कार! मी मित्रा AI आहे. शासकीय आरोग्य योजनेबद्दल मी तुम्हाला कशी मदत करू शकतो?",
     "bn": "নমস্কার! আমি মিত্র AI, আপনার সরকারি স্বাস্থ্য প্রকল্প সহকারী। কীভাবে আপনাকে সাহায্য করতে পারি?",
     "gu": "નમસ્તે! હું મિત્રા AI છું, તમારો સરકારી સ્વાસ્થ્ય યોજના સહાયક. આજે હું તમને કેવી રીતે મદદ કરી શકું?",

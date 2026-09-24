@@ -7,8 +7,8 @@ def test_scheme_summary_endpoint():
     response = client.get("/api/schemes")
     assert response.status_code == 200
     data = response.json()
-    assert "total_indexed_chunks" in data
-    assert "source_documents" in data
+    assert "primary_schemes" in data
+    assert "supported_languages" in data
 
 def test_scheme_eligibility_endpoint():
     payload = {

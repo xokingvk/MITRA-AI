@@ -104,17 +104,47 @@ export async function checkBackendHealth() {
   }
 }
 
+export const LANGUAGE_LOCALE_MAP = {
+  en: "en-IN",
+  hi: "hi-IN",
+  ta: "ta-IN",
+  te: "te-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  mr: "mr-IN",
+  bn: "bn-IN",
+  gu: "gu-IN",
+  "en-IN": "en-IN",
+  "hi-IN": "hi-IN",
+  "ta-IN": "ta-IN",
+  "te-IN": "te-IN",
+  "kn-IN": "kn-IN",
+  "ml-IN": "ml-IN",
+  "mr-IN": "mr-IN",
+  "bn-IN": "bn-IN",
+  "gu-IN": "gu-IN",
+};
+
+export function getLanguageLocale(lang = "en") {
+  const clean = String(lang || "en").toLowerCase();
+  return LANGUAGE_LOCALE_MAP[clean] || LANGUAGE_LOCALE_MAP[clean.split("-")[0]] || "en-IN";
+}
+
 /**
  * Transcribes recorded audio bytes using the backend STT service.
  * @param {Blob} audioBlob - Recorded audio Blob from MediaRecorder
- * @param {string} language - ISO language code
+ * @param {string} language - ISO language code (en, hi, ta, te, kn, ml, mr, bn, gu)
  */
 export async function transcribeVoice(audioBlob, language = "en") {
   try {
+    const locale = getLanguageLocale(language);
+    console.log(`[API] language_selected: ${locale}`);
+    console.log(`[API] audio_mime_type: ${audioBlob.type || 'audio/webm'}`);
+
     const formData = new FormData();
-    const fileExt = audioBlob.type.includes("mp4") ? "mp4" : audioBlob.type.includes("wav") ? "wav" : "webm";
+    const fileExt = audioBlob.type?.includes("mp4") ? "mp4" : audioBlob.type?.includes("wav") ? "wav" : "webm";
     formData.append("file", audioBlob, `voice_recording.${fileExt}`);
-    formData.append("language_code", language === "ta" ? "ta-IN" : language === "hi" ? "hi-IN" : "en-IN");
+    formData.append("language_code", locale);
 
     const response = await fetch(`${API_BASE_URL}/api/voice/transcribe`, {
       method: "POST",
@@ -126,20 +156,25 @@ export async function transcribeVoice(audioBlob, language = "en") {
       throw new Error(errData.detail || errData.message || `Voice transcription failed with status ${response.status}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log(`[API] transcription_success: true, text: "${data.transcript}", language_detected: ${data.language_code}`);
+    return data;
   } catch (error) {
-    console.error("API transcribeVoice error:", error);
+    console.error("[API] transcribeVoice error:", error);
     throw error;
   }
 }
 
 /**
- * Synthesizes text to speech audio using the backend TTS service.
+ * Synthesizes text to speech audio using the backend Gemini native TTS service.
  * @param {string} text - Text to speak
  * @param {string} language - ISO language code
  */
 export async function synthesizeVoice(text, language = "en") {
   try {
+    const locale = getLanguageLocale(language);
+    console.log(`[API] synthesizeVoice requested - response_language: ${locale}`);
+
     const response = await fetch(`${API_BASE_URL}/api/voice/synthesize`, {
       method: "POST",
       headers: {
@@ -147,7 +182,7 @@ export async function synthesizeVoice(text, language = "en") {
       },
       body: JSON.stringify({
         text,
-        language_code: language === "ta" ? "ta-IN" : language === "hi" ? "hi-IN" : "en-IN",
+        language_code: locale,
       }),
     });
 
@@ -156,9 +191,11 @@ export async function synthesizeVoice(text, language = "en") {
       throw new Error(errData.detail || errData.message || `Voice synthesis failed with status ${response.status}`);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log(`[API] tts_success: ${Boolean(data.audio_base64)}`);
+    return data;
   } catch (error) {
-    console.error("API synthesizeVoice error:", error);
+    console.error("[API] synthesizeVoice error:", error);
     throw error;
   }
 }

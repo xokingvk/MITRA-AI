@@ -15,5 +15,5 @@ def test_health_check_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert "vector_store_loaded" in data
-    assert "embedding_model" in data
+    assert "architecture" in data
+    assert "gemini_model" in data

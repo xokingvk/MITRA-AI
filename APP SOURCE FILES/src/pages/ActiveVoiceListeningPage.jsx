@@ -64,17 +64,19 @@ export const ActiveVoiceListeningPage = () => {
         const audioBlob = await voiceService.stopRecording();
         
         if (audioBlob && audioBlob.size > 0) {
-          const transcript = await voiceService.transcribe(audioBlob, language);
-          if (transcript && transcript.trim()) {
-            finalQuery = transcript.trim();
+          const res = await voiceService.transcribe(audioBlob, language);
+          const transcriptText = (res && typeof res === 'object' ? res.transcript : res) || "";
+          
+          if (transcriptText && transcriptText.trim()) {
+            finalQuery = transcriptText.trim();
             setSpokenQuery(finalQuery);
           }
         }
       } catch (err) {
-        console.warn("[VOICE UI] Transcription error:", err);
+        console.warn("[VOICE UI] Transcription notice:", err);
         if (!finalQuery) {
           setVoiceState('error');
-          setUiNotice(err.message || "Voice transcription failed. Please speak clearly or type your question below.");
+          setUiNotice(err.message || "Voice transcription was unable to recognize speech. Please speak clearly or type your question below.");
           return;
         }
       }

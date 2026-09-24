@@ -155,9 +155,9 @@ export class VoiceAssistantService {
     if (!audioBlob || audioBlob.size === 0) {
       throw new Error("No speech recorded. Please speak clearly into your microphone.");
     }
-    console.log(`[VOICE] Sending audio recording (${audioBlob.size} bytes) for transcription...`);
+    console.log(`[VOICE] Sending audio recording (${audioBlob.size} bytes) for transcription (language: ${language})...`);
     const response = await transcribeVoice(audioBlob, language);
-    return response.transcript || "";
+    return response;
   }
 
   async speak(text, onEnd, language = 'en') {
@@ -168,11 +168,11 @@ export class VoiceAssistantService {
 
     this.stopSpeaking();
 
-    // 1. Try backend TTS synthesis first
+    // 1. Try Gemini backend native TTS synthesis first
     try {
       const result = await synthesizeVoice(text, language);
       if (result && result.audio_base64) {
-        console.log("[VOICE] Playing backend synthesized audio...");
+        console.log(`[VOICE] Playing Gemini native synthesized audio for language ${language}...`);
         const audioUrl = `data:audio/wav;base64,${result.audio_base64}`;
         const audio = new Audio(audioUrl);
         this.currentAudioPlayer = audio;
@@ -180,7 +180,8 @@ export class VoiceAssistantService {
           this.currentAudioPlayer = null;
           if (onEnd) onEnd();
         };
-        audio.onerror = () => {
+        audio.onerror = (e) => {
+          console.warn("[VOICE] Gemini audio playback error, trying browser fallback:", e);
           this.currentAudioPlayer = null;
           this.speakWithBrowserSynth(text, onEnd, language);
         };
@@ -188,7 +189,7 @@ export class VoiceAssistantService {
         return;
       }
     } catch (e) {
-      console.warn("[VOICE] Backend TTS unavailable, using browser speech synthesis:", e);
+      console.warn("[VOICE] Backend Gemini TTS unavailable, using browser speech synthesis fallback:", e);
     }
 
     // 2. Fallback to browser Web Speech Synthesis
@@ -205,15 +206,28 @@ export class VoiceAssistantService {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.95;
     utterance.pitch = 1.0;
-    utterance.lang = language === 'ta' ? 'ta-IN' : language === 'hi' ? 'hi-IN' : 'en-US';
+
+    const langLocales = {
+      en: 'en-IN',
+      hi: 'hi-IN',
+      ta: 'ta-IN',
+      te: 'te-IN',
+      kn: 'kn-IN',
+      ml: 'ml-IN',
+      mr: 'mr-IN',
+      bn: 'bn-IN',
+      gu: 'gu-IN'
+    };
+    const cleanLang = String(language || 'en').toLowerCase().split('-')[0];
+    utterance.lang = langLocales[cleanLang] || 'en-IN';
 
     utterance.onend = () => {
-      console.log("[VOICE] Browser speech synthesis completed.");
+      console.log(`[VOICE] Browser speech synthesis completed (${utterance.lang}).`);
       if (onEnd) onEnd();
     };
 
     utterance.onerror = (err) => {
-      console.warn("[VOICE] Browser speech synthesis error:", err);
+      console.warn("[VOICE] Browser speech synthesis notice:", err);
       if (onEnd) onEnd();
     };
 
