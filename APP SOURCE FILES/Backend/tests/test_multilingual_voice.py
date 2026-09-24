@@ -92,5 +92,47 @@ def test_multilingual_pipeline():
 
     print("\n>>> ALL HEALTH-ONLY AND MULTILINGUAL SCOPE TESTS PASSED! <<<")
 
+def test_voice_service_gemini_transcribe():
+    print("\n=== TEST 3: Voice Service Gemini 3.5 Transcribe Flow ===")
+    from unittest.mock import MagicMock, patch
+    from app.services.voice_service import VoiceService
+
+    voice_service = VoiceService()
+    voice_service.gemini_api_key = "test-api-key"
+
+    mock_client = MagicMock()
+    mock_file = MagicMock()
+    mock_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/test1234"
+    mock_file.name = "files/test1234"
+    mock_client.files.upload.return_value = mock_file
+
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = "I am pregnant and need government health schemes"
+    mock_client.interactions.create.return_value = mock_interaction
+
+    with patch.object(voice_service, "_get_gemini_client", return_value=mock_client):
+        res = asyncio.run(voice_service.transcribe_audio(
+            audio_bytes=b"fake-webm-audio-bytes-header-data",
+            filename="recording.webm",
+            mime_type="audio/webm",
+            language_code="ta-IN"
+        ))
+
+        assert res["transcript"] == "I am pregnant and need government health schemes"
+        assert res["language"] == "ta-IN"
+        assert res["provider"] == "gemini-3.5-transcribe"
+
+        # Verify client.files.upload was called
+        mock_client.files.upload.assert_called_once()
+        # Verify client.interactions.create was called with gemini-3.5-transcribe and verbatim mode
+        mock_client.interactions.create.assert_called_once()
+        call_kwargs = mock_client.interactions.create.call_args.kwargs
+        assert call_kwargs["model"] == "gemini-3.5-transcribe"
+        assert call_kwargs["input"] == mock_file.uri
+        assert call_kwargs["extra_body"]["transcription_config"]["mode"] == "verbatim"
+        assert call_kwargs["extra_body"]["transcription_config"]["language_codes"] == ["ta-IN"]
+        print("  OK: Gemini 3.5 Transcribe interactions call verified successfully!")
+
 if __name__ == "__main__":
     test_multilingual_pipeline()
+    test_voice_service_gemini_transcribe()

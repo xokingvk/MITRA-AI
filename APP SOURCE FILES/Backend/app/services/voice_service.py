@@ -1,8 +1,10 @@
 import io
+import os
 import wave
 import json
 import base64
 import logging
+import tempfile
 from typing import Optional, Dict, Any
 from google import genai
 from google.genai import types
@@ -16,6 +18,7 @@ class VoiceService:
     def __init__(self):
         self.gemini_api_key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
         self.model_name = settings.GEMINI_MODEL
+        self.transcribe_model = settings.GEMINI_TRANSCRIBE_MODEL
 
     def _get_gemini_client(self):
         """Returns a Gemini client if API key is configured."""
@@ -31,7 +34,7 @@ class VoiceService:
         language_code: Optional[str] = "en-IN"
     ) -> Dict[str, Any]:
         """
-        Transcribes audio bytes to text using Gemini multimodal audio understanding.
+        Transcribes audio bytes to verbatim text using Gemini 3.5 Transcribe (Interactions API & Files upload).
         Accurately transcribes verbatim whatever the user actually spoke in their native language or English.
         """
         if not audio_bytes or len(audio_bytes) == 0:
@@ -42,21 +45,28 @@ class VoiceService:
         selected_locale = lang_info["locale"]
         canonical_code = lang_info["code"]
 
-        # Determine standard MIME type for Gemini
+        # Determine standard MIME type and file extension for Gemini
         effective_mime = mime_type or "audio/webm"
+        ext = "webm"
         if "webm" in effective_mime:
             effective_mime = "audio/webm"
+            ext = "webm"
         elif "mp4" in effective_mime or "m4a" in effective_mime:
             effective_mime = "audio/mp4"
+            ext = "mp4"
         elif "wav" in effective_mime:
             effective_mime = "audio/wav"
+            ext = "wav"
         elif "ogg" in effective_mime:
             effective_mime = "audio/ogg"
+            ext = "ogg"
         elif "mp3" in effective_mime or "mpeg" in effective_mime:
             effective_mime = "audio/mp3"
+            ext = "mp3"
 
         # Required structured debug logging
         logger.info(f"VOICE: audio_received = True, audio_mime_type = {effective_mime}, audio_size = {len(audio_bytes)}")
+        logger.info(f"TRANSCRIPTION: model = {self.transcribe_model}")
         logger.info(f"TRANSCRIPTION: language = {selected_locale}")
 
         client = self._get_gemini_client()
@@ -67,74 +77,93 @@ class VoiceService:
                 status_code=503
             )
 
+        tmp_audio_path = None
+        uploaded_file = None
+
         try:
-            logger.info(f"Sending audio recording ({len(audio_bytes)} bytes) to Gemini ({self.model_name}) for verbatim transcription...")
+            # 1. Write audio bytes to temporary file on disk for Gemini Files upload
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp_file:
+                tmp_file.write(audio_bytes)
+                tmp_audio_path = tmp_file.name
 
-            audio_part = types.Part.from_bytes(
-                data=audio_bytes,
-                mime_type=effective_mime
-            )
-
-            prompt = (
-                f"You are a verbatim speech-to-text transcription engine for Indian languages and English.\n"
-                f"Interface language hint: {selected_lang_name} ({selected_locale}).\n\n"
-                "STRICT TRANSCRIPTION RULES:\n"
-                "1. Transcribe EXACTLY what the user spoke in the audio. Do not summarize, alter, translate, infer, or hallucinate.\n"
-                "2. If spoken in Tamil, Hindi, Telugu, Kannada, Malayalam, Marathi, Bengali, Gujarati, or English, "
-                "transcribe in the native script of that language (e.g. தமிழ், हिंदी, తెలుగు, ಕನ್ನಡ, മലയാളം, मराठी, বাংলা, ગુજરાતી, or English for English speech).\n"
-                "3. If no speech or only noise is detected, return an empty transcript string.\n"
-                "4. Return ONLY a valid JSON object matching this schema:\n"
-                "{\n"
-                '  "transcript": "Exact spoken words verbatim in native script",\n'
-                '  "language_detected": "en | hi | ta | te | kn | ml | mr | bn | gu"\n'
-                "}"
-            )
-
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=[audio_part, prompt],
-                config=types.GenerateContentConfig(
-                    temperature=0.0
+            # 2. Upload audio using client.files.upload(...)
+            logger.info(f"Uploading audio file ({len(audio_bytes)} bytes) to Gemini Files API for {self.transcribe_model}...")
+            uploaded_file = client.files.upload(
+                file=tmp_audio_path,
+                config=types.UploadFileConfig(
+                    mime_type=effective_mime,
+                    display_name=f"voice_recording_{selected_locale}.{ext}"
                 )
             )
+            logger.info(f"Audio file uploaded successfully (URI: {uploaded_file.uri}, Name: {uploaded_file.name})")
 
-            raw_text = (response.text or "").strip()
-            if "```json" in raw_text:
-                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in raw_text:
-                raw_text = raw_text.split("```")[1].split("```")[0].strip()
+            # 3. Call client.interactions.create with gemini-3.5-transcribe and verbatim mode
+            logger.info(f"Calling client.interactions.create with model='{self.transcribe_model}'...")
+            
+            interaction_prompt = (
+                f"Transcribe the audio recording verbatim in {selected_lang_name} ({selected_locale}). "
+                f"Output ONLY the exact spoken transcript in native script. Do not summarize, guess, or edit."
+            )
 
-            transcript = ""
-            detected_lang = canonical_code
+            interaction = client.interactions.create(
+                model=self.transcribe_model,
+                input=uploaded_file.uri,
+                system_instruction=interaction_prompt,
+                extra_body={
+                    "transcription_config": {
+                        "language_codes": [selected_locale],
+                        "mode": "verbatim"
+                    }
+                }
+            )
 
-            try:
-                parsed = json.loads(raw_text)
-                if isinstance(parsed, dict):
-                    transcript = (parsed.get("transcript") or "").strip()
-                    detected_lang = parsed.get("language_detected") or canonical_code
-            except Exception:
-                transcript = raw_text.strip()
+            transcript = (getattr(interaction, "output_text", None) or "").strip()
 
             if not transcript:
                 logger.warning("Gemini returned empty transcript for audio.")
                 raise MitraException("Sorry, I couldn't understand the voice recording. Please speak clearly and try again.", status_code=400)
 
-            resolved_detected = resolve_language(detected_lang)
+            # Clean any JSON or markdown wrapper if present
+            if "```json" in transcript:
+                transcript = transcript.split("```json")[1].split("```")[0].strip()
+            elif "```" in transcript:
+                transcript = transcript.split("```")[1].split("```")[0].strip()
+
+            try:
+                parsed = json.loads(transcript)
+                if isinstance(parsed, dict) and "transcript" in parsed:
+                    transcript = parsed["transcript"].strip()
+            except Exception:
+                pass
+
             logger.info(f"TRANSCRIPTION: transcript = '{transcript}'")
-            logger.info(f"TRANSCRIPTION: language_detected = {resolved_detected['locale']}")
+            logger.info(f"QUERY: query_sent = '{transcript}'")
 
             return {
                 "transcript": transcript,
-                "language_code": resolved_detected["code"],
-                "locale": resolved_detected["locale"],
-                "provider": "gemini"
+                "language_code": canonical_code,
+                "language": selected_locale,
+                "provider": self.transcribe_model
             }
 
         except MitraException:
             raise
         except Exception as e:
-            logger.error(f"Gemini audio transcription failed: {str(e)}")
+            logger.error(f"Gemini {self.transcribe_model} transcription failed: {str(e)}")
             raise MitraException(f"Sorry, I couldn't understand the voice recording: {str(e)}. Please try again.", status_code=500)
+        finally:
+            # Clean up local temporary file
+            if tmp_audio_path and os.path.exists(tmp_audio_path):
+                try:
+                    os.remove(tmp_audio_path)
+                except Exception:
+                    pass
+            # Clean up uploaded file from Gemini storage
+            if uploaded_file and hasattr(uploaded_file, "name"):
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    pass
 
     async def synthesize_speech(
         self,
