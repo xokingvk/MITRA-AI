@@ -64,14 +64,20 @@ class VoiceService:
             effective_mime = "audio/mp3"
             ext = "mp3"
 
-        # Required structured debug logging
-        logger.info(f"VOICE: audio_received = True, audio_mime_type = {effective_mime}, audio_size = {len(audio_bytes)}")
-        logger.info(f"TRANSCRIPTION: model = {self.transcribe_model}")
-        logger.info(f"TRANSCRIPTION: language = {selected_locale}")
+        # Explicit Runtime Test Log Markers
+        logger.info("VOICE_TEST_START")
+        logger.info("endpoint=/api/voice/transcribe")
+        logger.info("audio_received=True")
+        logger.info(f"transcription_model={self.transcribe_model}")
+        logger.info(f"audio_mime_type={effective_mime}")
+        logger.info(f"audio_size={len(audio_bytes)}")
+        logger.info(f"language_requested={selected_locale}")
 
         client = self._get_gemini_client()
         if not client:
             logger.error("GEMINI_API_KEY is not configured in backend environment.")
+            logger.info("transcription_success=False")
+            logger.info("VOICE_TEST_END")
             raise MitraException(
                 "Gemini API key is not configured on the backend server. Please set GEMINI_API_KEY to enable voice transcription.",
                 status_code=503
@@ -109,10 +115,8 @@ class VoiceService:
                 ],
             }
 
-            logger.info(f"TRANSCRIPTION: model = {self.transcribe_model}")
-            logger.info(f"TRANSCRIPTION: audio_mime_type = {uploaded_file.mime_type or effective_mime}")
-            logger.info(f"TRANSCRIPTION: request_keys = {list(interaction_kwargs.keys())}")
-            logger.info(f"TRANSCRIPTION: language = {selected_locale}")
+            logger.info("transcription_request_started")
+            logger.info(f"request_keys={list(interaction_kwargs.keys())}")
             
             interaction = client.interactions.create(**interaction_kwargs)
 
@@ -124,6 +128,8 @@ class VoiceService:
 
             if not transcript:
                 logger.warning("Gemini returned empty transcript for audio.")
+                logger.info("transcription_success=False")
+                logger.info("VOICE_TEST_END")
                 raise MitraException("Sorry, I couldn't understand the voice recording. Please speak clearly and try again.", status_code=400)
 
             # Clean any JSON or markdown wrapper if present
@@ -139,8 +145,11 @@ class VoiceService:
             except Exception:
                 pass
 
-            logger.info(f"TRANSCRIPTION: transcript = '{transcript}'")
-            logger.info(f"QUERY: query_sent = '{transcript}'")
+            logger.info("transcription_success=True")
+            logger.info(f"transcript_length={len(transcript)}")
+            logger.info(f"transcript='{transcript}'")
+            logger.info(f"query_sent='{transcript}'")
+            logger.info("VOICE_TEST_END")
 
             return {
                 "transcript": transcript,
@@ -150,6 +159,8 @@ class VoiceService:
             }
 
         except MitraException:
+            logger.info("transcription_success=False")
+            logger.info("VOICE_TEST_END")
             raise
         except Exception as e:
             error_status = getattr(e, "status_code", getattr(e, "code", None))
@@ -159,6 +170,8 @@ class VoiceService:
                 f"http_status={error_status}, "
                 f"gemini_error_message={str(e)}"
             )
+            logger.info("transcription_success=False")
+            logger.info("VOICE_TEST_END")
             raise MitraException(f"Sorry, I couldn't understand the voice recording: {str(e)}. Please try again.", status_code=500)
         finally:
             # Clean up local temporary file
