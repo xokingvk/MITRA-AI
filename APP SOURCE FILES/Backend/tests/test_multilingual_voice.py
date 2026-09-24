@@ -128,11 +128,50 @@ def test_voice_service_gemini_transcribe():
         mock_client.interactions.create.assert_called_once()
         call_kwargs = mock_client.interactions.create.call_args.kwargs
         assert call_kwargs["model"] == "gemini-3.5-transcribe"
-        assert call_kwargs["input"] == mock_file.uri
-        assert call_kwargs["extra_body"]["transcription_config"]["mode"] == "verbatim"
-        assert call_kwargs["extra_body"]["transcription_config"]["language_codes"] == ["ta-IN"]
+        assert call_kwargs["input"][0]["type"] == "audio"
+        assert call_kwargs["input"][0]["uri"] == mock_file.uri
+        assert call_kwargs["generation_config"]["transcription_config"]["mode"]["type"] == "verbatim"
+        assert call_kwargs["generation_config"]["transcription_config"]["language_codes"] == ["ta-IN"]
         print("  OK: Gemini 3.5 Transcribe interactions call verified successfully!")
+
+def test_document_extraction_gemini_interactions():
+    print("\n=== TEST 4: Document Extraction Gemini Interactions Flow ===")
+    from unittest.mock import MagicMock, patch
+    from app.services.gemini_service import GeminiService
+
+    gemini_service = GeminiService(api_key="test-api-key")
+
+    mock_client = MagicMock()
+    mock_file = MagicMock()
+    mock_file.uri = "https://generativelanguage.googleapis.com/v1beta/files/doc1234"
+    mock_file.name = "files/doc1234"
+    mock_client.files.upload.return_value = mock_file
+
+    mock_interaction = MagicMock()
+    mock_interaction.output_text = '{"name": "Ananya Sharma", "age": 28, "gender": "Female", "state": "Tamil Nadu", "district": "Chennai", "pincode": "600001", "address": "12 Gandhi St", "annual_income": null, "pregnancy_status": null}'
+    mock_client.interactions.create.return_value = mock_interaction
+
+    gemini_service.client = mock_client
+
+    extracted = gemini_service.extract_profile_from_document(
+        file_bytes=b"fake-pdf-content",
+        filename="aadhaar_card.pdf",
+        mime_type="application/pdf"
+    )
+
+    assert extracted["name"] == "Ananya Sharma"
+    assert extracted["age"] == 28
+    assert extracted["gender"] == "Female"
+    assert extracted["state"] == "Tamil Nadu"
+    assert extracted["district"] == "Chennai"
+    assert extracted["annual_income"] is None
+    assert extracted["pregnancy_status"] is None
+
+    mock_client.files.upload.assert_called_once()
+    mock_client.interactions.create.assert_called_once()
+    print("  OK: Document extraction verified successfully with null preservation!")
 
 if __name__ == "__main__":
     test_multilingual_pipeline()
     test_voice_service_gemini_transcribe()
+    test_document_extraction_gemini_interactions()

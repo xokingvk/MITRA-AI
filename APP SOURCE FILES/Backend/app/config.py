@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_TRANSCRIBE_MODEL: str = "gemini-3.5-transcribe"
+    GEMINI_DOCUMENT_MODEL: str = "gemini-3.8-flash"
     
     # Temporary Document Processing Path
     TEMPORARY_DOCUMENT_PATH: str = str(BASE_DIR / "data" / "temporary_documents")

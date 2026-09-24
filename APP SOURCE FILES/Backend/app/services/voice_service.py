@@ -100,24 +100,30 @@ class VoiceService:
             # 3. Call client.interactions.create with gemini-3.5-transcribe and verbatim mode
             logger.info(f"Calling client.interactions.create with model='{self.transcribe_model}'...")
             
-            interaction_prompt = (
-                f"Transcribe the audio recording verbatim in {selected_lang_name} ({selected_locale}). "
-                f"Output ONLY the exact spoken transcript in native script. Do not summarize, guess, or edit."
-            )
-
             interaction = client.interactions.create(
                 model=self.transcribe_model,
-                input=uploaded_file.uri,
-                system_instruction=interaction_prompt,
-                extra_body={
+                input=[
+                    {
+                        "type": "audio",
+                        "uri": uploaded_file.uri,
+                        "mime_type": uploaded_file.mime_type or effective_mime,
+                    }
+                ],
+                generation_config={
                     "transcription_config": {
                         "language_codes": [selected_locale],
-                        "mode": "verbatim"
+                        "mode": {
+                            "type": "verbatim"
+                        }
                     }
                 }
             )
 
-            transcript = (getattr(interaction, "output_text", None) or "").strip()
+            transcript = ""
+            if hasattr(interaction, "output_text") and interaction.output_text:
+                transcript = interaction.output_text.strip()
+            elif hasattr(interaction, "output") and isinstance(interaction.output, str):
+                transcript = interaction.output.strip()
 
             if not transcript:
                 logger.warning("Gemini returned empty transcript for audio.")
@@ -132,7 +138,7 @@ class VoiceService:
             try:
                 parsed = json.loads(transcript)
                 if isinstance(parsed, dict) and "transcript" in parsed:
-                    transcript = parsed["transcript"].strip()
+                    transcript = str(parsed["transcript"]).strip()
             except Exception:
                 pass
 

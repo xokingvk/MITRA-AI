@@ -1,5 +1,7 @@
+import os
 import json
 import logging
+import tempfile
 from typing import Optional, Dict, Any, List
 from google import genai
 from google.genai import types
@@ -273,7 +275,7 @@ class GeminiService:
         mime_type: Optional[str] = None,
         text_content: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Extracts ONLY facts that are explicitly visible in the document using Gemini vision/text."""
+        """Extracts ONLY facts that are explicitly visible in the document using Gemini Files API & Interactions API."""
         default_profile = {
             "name": None,
             "age": None,
@@ -295,8 +297,30 @@ class GeminiService:
             "summary": "Document parsed."
         }
 
+        file_size = len(file_bytes) if file_bytes else 0
+        effective_filename = filename or "document.pdf"
+        ext = effective_filename.split(".")[-1].lower() if "." in effective_filename else "pdf"
+
+        # Determine effective mime type
+        if ext in ["jpg", "jpeg"]:
+            effective_mime = "image/jpeg"
+        elif ext == "png":
+            effective_mime = "image/png"
+        elif ext == "pdf":
+            effective_mime = "application/pdf"
+        elif ext == "txt":
+            effective_mime = "text/plain"
+        else:
+            effective_mime = mime_type or "application/pdf"
+
+        # Required structured document debug logging
+        logger.info(f"DOCUMENT: filename = {effective_filename}")
+        logger.info(f"DOCUMENT: mime_type = {effective_mime}")
+        logger.info(f"DOCUMENT: file_size = {file_size}")
+        logger.info("DOCUMENT: upload_started = True")
+
         if not self.is_configured():
-            logger.warning("Gemini API key not configured for document extraction. Using basic heuristic parsing.")
+            logger.warning("Gemini API key not configured for document extraction. Using heuristic fallback.")
             if text_content:
                 lowered = text_content.lower()
                 if "aadhaar" in lowered or "uidai" in lowered:
@@ -305,34 +329,81 @@ class GeminiService:
                     default_profile["document_type"] = "Income Certificate"
                 elif "patta" in lowered or "land" in lowered:
                     default_profile["document_type"] = "Land Document"
+            logger.info("DOCUMENT: extraction_success = True")
+            logger.info(f"DOCUMENT: extracted_fields = {[k for k, v in default_profile.items() if v is not None and v != 'Document parsed.']}")
             return default_profile
 
+        tmp_path = None
+        uploaded_file = None
+        doc_model = getattr(settings, "GEMINI_DOCUMENT_MODEL", "gemini-3.8-flash")
+
         try:
-            contents = [DOCUMENT_EXTRACTION_PROMPT]
+            # 1. Write file bytes to temp file if provided for Gemini Files upload
+            if file_bytes and len(file_bytes) > 0:
+                with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+                    tmp.write(file_bytes)
+                    tmp_path = tmp.name
 
-            # Multimodal support for image and PDF files
-            if file_bytes and filename:
-                fn_lower = filename.lower()
-                if fn_lower.endswith((".jpg", ".jpeg")):
-                    contents.append(types.Part.from_bytes(data=file_bytes, mime_type="image/jpeg"))
-                elif fn_lower.endswith(".png"):
-                    contents.append(types.Part.from_bytes(data=file_bytes, mime_type="image/png"))
-                elif fn_lower.endswith(".pdf"):
-                    contents.append(types.Part.from_bytes(data=file_bytes, mime_type="application/pdf"))
-
-            if text_content:
-                contents.append(f"Document Text Content:\n{text_content[:6000]}")
-
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction="You are an accurate OCR and data extraction system. Extract ONLY visible facts. Return only valid JSON.",
-                    temperature=0.1
+                logger.info(f"Uploading document to Gemini Files API ({file_size} bytes)...")
+                uploaded_file = self.client.files.upload(
+                    file=tmp_path,
+                    config=types.UploadFileConfig(
+                        mime_type=effective_mime,
+                        display_name=f"doc_extract_{effective_filename}"
+                    )
                 )
-            )
+                logger.info(f"DOCUMENT: gemini_upload_success = True (URI: {uploaded_file.uri})")
 
-            raw_text = (response.text or "").strip()
+            logger.info("DOCUMENT: extraction_started = True")
+            
+            # Determine input type for Interactions API (document or image)
+            input_type = "image" if effective_mime.startswith("image/") else "document"
+
+            # 2. Call client.interactions.create with gemini-3.8-flash (or doc_model)
+            raw_text = ""
+            try:
+                if uploaded_file:
+                    interaction = self.client.interactions.create(
+                        model=doc_model,
+                        input=[
+                            {
+                                "type": input_type,
+                                "uri": uploaded_file.uri,
+                                "mime_type": uploaded_file.mime_type or effective_mime
+                            },
+                            {
+                                "type": "text",
+                                "text": DOCUMENT_EXTRACTION_PROMPT
+                            }
+                        ]
+                    )
+                    raw_text = getattr(interaction, "output_text", None) or ""
+                else:
+                    interaction = self.client.interactions.create(
+                        model=doc_model,
+                        input=[
+                            {
+                                "type": "text",
+                                "text": f"{DOCUMENT_EXTRACTION_PROMPT}\n\nDocument Text Content:\n{text_content[:6000] if text_content else ''}"
+                            }
+                        ]
+                    )
+                    raw_text = getattr(interaction, "output_text", None) or ""
+            except Exception as interaction_err:
+                logger.warning(f"Interactions API notice for document extraction ({interaction_err}). Falling back to content generation...")
+                contents = [DOCUMENT_EXTRACTION_PROMPT]
+                if uploaded_file:
+                    contents.append(uploaded_file)
+                elif text_content:
+                    contents.append(f"Document Text Content:\n{text_content[:6000]}")
+
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(temperature=0.1)
+                )
+                raw_text = (response.text or "").strip()
+
             if "```json" in raw_text:
                 raw_text = raw_text.split("```json")[1].split("```")[0].strip()
             elif "```" in raw_text:
@@ -343,12 +414,28 @@ class GeminiService:
                 for k in default_profile:
                     if k in parsed:
                         default_profile[k] = parsed[k]
-                return default_profile
+
+            extracted_keys = [k for k, v in default_profile.items() if v is not None and v != "Document parsed."]
+            logger.info("DOCUMENT: extraction_success = True")
+            logger.info(f"DOCUMENT: extracted_fields = {extracted_keys}")
+
+            return default_profile
 
         except Exception as e:
-            logger.warning(f"Gemini document extraction notice ({str(e)}). Returning default empty profile.")
-
-        return default_profile
+            logger.error(f"Gemini document extraction failed: {str(e)}")
+            logger.info("DOCUMENT: extraction_success = False")
+            return default_profile
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+            if uploaded_file and hasattr(uploaded_file, "name"):
+                try:
+                    self.client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    pass
 
     def match_confirmed_profile(
         self,

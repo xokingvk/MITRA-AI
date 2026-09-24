@@ -13,6 +13,8 @@ services:
         value: gemini-2.5-flash
       - key: GEMINI_TRANSCRIBE_MODEL
         value: gemini-3.5-transcribe
+      - key: GEMINI_DOCUMENT_MODEL
+        value: gemini-3.8-flash
       - key: TEMPORARY_DOCUMENT_PATH
         value: data/temporary_documents
       - key: CORS_ORIGINS
