@@ -8,7 +8,6 @@ export const HomeVoiceAssistantPage = () => {
   const navigate = useNavigate();
   const { 
     isListening, 
-    toggleListening, 
     setSpokenQuery, 
     setSearchQuery,
     setUploadedDoc,
@@ -25,13 +24,6 @@ export const HomeVoiceAssistantPage = () => {
     setTimeout(() => setToastMsg(''), 3000);
   };
 
-  const handlePromptClick = (query) => {
-    setSpokenQuery(query);
-    setSearchQuery(query);
-    showToast(`Searching: "${query}"`);
-    navigate('/search-results');
-  };
-
   const handleFileUpload = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -39,19 +31,20 @@ export const HomeVoiceAssistantPage = () => {
       showToast(`${t("doc.uploading")} ${file.name}`);
       setTimeout(() => {
         navigate('/document-analyzing');
-      }, 1000);
+      }, 600);
     }
   };
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     if (inputVal.trim()) {
-      setSpokenQuery(inputVal.trim());
-      setSearchQuery(inputVal.trim());
+      const query = inputVal.trim();
+      setSpokenQuery(query);
+      setSearchQuery(query);
       setInputVal('');
       navigate('/search-results');
     } else {
-      toggleListening();
+      navigate('/active-voice');
     }
   };
 
@@ -64,7 +57,7 @@ export const HomeVoiceAssistantPage = () => {
         {/* Civic Welcoming Greeting (Centered) */}
         <section className="w-full flex flex-col items-center text-center gap-1 pt-2">
           <h1 className="font-headline-lg text-[28px] font-bold text-text-charcoal tracking-tight">
-            {t("home.greeting").replace("Ramesh", userProfile.name.split(" ")[0])}
+            {userProfile?.name ? `Hello, ${userProfile.name.split(" ")[0]}` : "Welcome to MITRA AI"}
           </h1>
           <p className="font-headline-sm text-lg font-semibold text-primary-container">
             {t("home.question")}
@@ -74,7 +67,7 @@ export const HomeVoiceAssistantPage = () => {
         {/* Primary Action Card: Speak & Type (Centered) */}
         <section className="w-full bg-surface-warm-white rounded-3xl p-6 shadow-sm flex flex-col items-center text-center border border-border-warm-gray/40">
           
-          {/* Dynamic Voice Waveform or Status */}
+          {/* Dynamic Voice Status */}
           {isListening && (
             <div className="flex items-center justify-center gap-1.5 h-10 mb-3 px-4 py-1.5 bg-surface-sand rounded-full animate-pulse">
               <span className="w-1.5 h-4 bg-primary-container rounded-full animate-bounce"></span>

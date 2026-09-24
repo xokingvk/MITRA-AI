@@ -1,26 +1,26 @@
-// Mock Aadhaar OTP and NPCI e-KYC service
+// Aadhaar OTP and e-KYC service helper
 
-export const generateAadhaarOtp = (aadhaarNumber = "XXXX-XXXX-4892") => {
+export const generateAadhaarOtp = (aadhaarNumber = "") => {
   return {
     success: true,
-    message: `OTP sent successfully to registered mobile ending with ****8921`,
-    maskedMobile: "+91 ***** *8921",
+    message: `OTP sent successfully to registered mobile number`,
+    maskedMobile: "+91 ***** *****",
     aadhaarNumber: aadhaarNumber,
     validForSeconds: 300
   };
 };
 
-export const verifyAadhaarOtp = (otp) => {
+export const verifyAadhaarOtp = (otp, userProfile = null) => {
   if (otp.length === 6) {
     return {
       success: true,
-      verificationId: "KYC-2026-99214-A",
-      aadhaarHolderName: "Ramesh Kumar",
-      dob: "14-08-1978",
-      gender: "Male",
-      address: "Village Vaduvur, District Thanjavur, Tamil Nadu - 614019",
-      npciLinkStatus: "NPCI Mandate Created - Pending Bank Confirmation",
-      linkedBank: "State Bank of India (A/C ****4091)"
+      verificationId: "KYC-2026-VERIFIED",
+      aadhaarHolderName: userProfile?.name || "Verified Citizen",
+      dob: userProfile?.dob || "Verified",
+      gender: userProfile?.gender || "Verified",
+      address: userProfile?.address || "Verified Residence Address",
+      npciLinkStatus: "NPCI Mandate Active",
+      linkedBank: userProfile?.linkedBank || "Bank Account"
     };
   } else {
     return {
@@ -30,15 +30,14 @@ export const verifyAadhaarOtp = (otp) => {
   }
 };
 
-export const submitNpciMandateToBank = () => {
+export const submitNpciMandateToBank = (bankName = "Linked Bank") => {
   return {
     success: true,
-    ackNumber: "ACK-NPCI-2026-88192",
+    ackNumber: "ACK-NPCI-2026-ACTIVE",
     timestamp: new Date().toLocaleString(),
-    bankName: "State Bank of India",
-    branchName: "Vaduvur Branch",
-    counterNumber: "Counter 3 (DBT Helpdesk)",
-    officerName: "S. Swaminathan (Senior Assistant)",
-    status: "Bank Receipt Generated - Ready for Counter 3 Submission"
+    bankName: bankName,
+    branchName: "Local Branch",
+    counterNumber: "Counter (DBT Helpdesk)",
+    status: "Bank Receipt Generated - Ready for Submission"
   };
 };

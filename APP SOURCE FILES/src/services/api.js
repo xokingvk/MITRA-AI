@@ -3,7 +3,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://mitra-ai-6a4h.onrender.com";
 
 /**
- * Sends a chat message to the MITRA AI backend RAG service.
+ * FLOW A: Sends a text or voice chat query to the MITRA AI backend RAG service.
  * @param {string} message - User query message
  * @param {string} language - Target ISO language code (default 'en')
  * @param {string} [sessionId] - Optional conversation session ID
@@ -35,7 +35,7 @@ export async function sendChatMessage(message, language = "en", sessionId = null
 }
 
 /**
- * Uploads a temporary user document (PDF/Image) to the backend for session context parsing.
+ * FLOW B: Uploads a temporary user supporting document (PDF/JPG/PNG) to Gemini for profile field extraction.
  * @param {File} file - File object from file input
  */
 export async function uploadDocument(file) {
@@ -61,6 +61,36 @@ export async function uploadDocument(file) {
 }
 
 /**
+ * FLOW B: Matches user-confirmed profile information against the permanent health scheme corpus.
+ * @param {Object} confirmedProfile - Object containing user-edited profile fields
+ * @param {string} language - Target ISO language code
+ */
+export async function matchConfirmedProfile(confirmedProfile, language = "en") {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/documents/match`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        confirmed_profile: confirmedProfile,
+        language: language,
+      }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.message || `Scheme matching failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("API matchConfirmedProfile error:", error);
+    throw error;
+  }
+}
+
+/**
  * Checks the backend health status.
  */
 export async function checkBackendHealth() {
@@ -75,9 +105,7 @@ export async function checkBackendHealth() {
 }
 
 /**
- * Fetches available health schemes.
- * @param {string} [category] - Optional category filter
- * @param {string} [language] - Optional language code
+ * Fetches available health schemes catalog.
  */
 export async function fetchSchemes(category = null, language = "en") {
   try {

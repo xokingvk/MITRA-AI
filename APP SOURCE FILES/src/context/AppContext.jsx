@@ -20,20 +20,16 @@ export const AppProvider = ({ children }) => {
 
   const t = (key) => getTranslation(language, key);
 
-  // User Profile
-  const [userProfile, setUserProfile] = useState({
-    name: "Ramesh Kumar",
-    tamilName: "ரமேஷ் குமார்",
-    aadhaarLast4: "4892",
-    mobile: "+91 98765 43210",
-    aadhaarMasked: "XXXX-XXXX-4892",
-    isEkycVerified: false,
-    isNpciSeeded: false,
-    linkedBank: "State Bank of India (A/C ****4091)",
-    village: "Vaduvur",
-    district: "Thanjavur",
-    state: "Tamil Nadu"
-  });
+  // User Profile (Initialized to null - NO default demo user)
+  const [userProfile, setUserProfile] = useState(null);
+
+  const clearSession = () => {
+    setUserProfile(null);
+    setUploadedDoc(null);
+    setAnalysisResult(null);
+    setSpokenQuery("");
+    setSearchQuery("");
+  };
 
   // Voice Assistant
   const [isListening, setIsListening] = useState(false);
@@ -129,6 +125,7 @@ export const AppProvider = ({ children }) => {
         setIsLanguageModalOpen,
         userProfile,
         setUserProfile,
+        clearSession,
         isListening,
         setIsListening,
         spokenQuery,

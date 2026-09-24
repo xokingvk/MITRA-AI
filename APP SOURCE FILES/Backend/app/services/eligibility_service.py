@@ -1,8 +1,11 @@
+import json
 import logging
 from typing import Dict, Any, List
-from app.models.scheme_models import EligibilityCriteriaRequest, EligibilityGuidanceResponse, SchemeMatchItem
+from app.models.scheme_models import EligibilityCriteriaRequest, EligibilityGuidanceResponse, SchemeMatchItem as OldSchemeMatchItem
+from app.models.document_models import SchemeMatchRequest, SchemeMatchResponse, SchemeMatchItem
 from app.services.retrieval_service import RetrievalService
 from app.services.gemini_service import GeminiService
+from app.core.prompts import SCHEME_MATCHING_PROMPT
 from app.core.language_config import resolve_language, DISCLAIMERS
 
 logger = logging.getLogger(__name__)
@@ -12,93 +15,98 @@ class EligibilityService:
         self.retrieval_service = retrieval_service
         self.gemini_service = gemini_service
 
-    def evaluate_eligibility(self, request: EligibilityCriteriaRequest) -> EligibilityGuidanceResponse:
-        """Evaluates health scheme eligibility based on retrieved official context."""
-        lang_info = resolve_language(request.language)
+    def match_confirmed_profile(self, request: SchemeMatchRequest) -> SchemeMatchResponse:
+        """Flow B: Matches a user-confirmed profile dictionary against the permanent health scheme corpus via Gemini."""
+        profile = request.confirmed_profile or {}
+        lang_info = resolve_language(request.language or "en")
         lang_code = lang_info["code"]
-        lang_name = lang_info["name"]
 
-        # Build search query from profile fields
-        query_parts = ["government health schemes eligibility criteria"]
-        if request.age is not None:
-            query_parts.append(f"age {request.age} years")
-        if request.state:
-            query_parts.append(f"state {request.state}")
-        if request.annual_income is not None:
-            query_parts.append(f"income Rs {request.annual_income} BPL EWS")
-        if request.category:
-            query_parts.append(f"category {request.category}")
-        if request.disability_status:
-            query_parts.append("disability PwD healthcare benefits")
-        if request.gender:
-            query_parts.append(f"gender {request.gender} women maternity")
+        # Build RAG query from non-null profile attributes
+        query_terms = ["government health scheme eligibility criteria"]
+        for k, v in profile.items():
+            if v is not None and v != "" and k != "summary":
+                query_terms.append(f"{k} {v}")
 
-        search_query = " ".join(query_parts)
+        search_query = " ".join(query_terms)
         retrieved_chunks = self.retrieval_service.retrieve(search_query, top_k=6)
+        context_text = "\n\n".join(
+            f"Source: {c.get('source', 'health_schemes.pdf')} (Page {c.get('page', 1)})\nText: {c.get('text', '')}"
+            for c in retrieved_chunks
+        )
 
-        # Identify missing profile fields to help the user
-        missing_fields = []
-        if request.age is None:
-            missing_fields.append("Age")
-        if not request.state:
-            missing_fields.append("State of Residence")
-        if request.annual_income is None:
-            missing_fields.append("Annual Household Income")
-        if not request.category:
-            missing_fields.append("Category (SC/ST/OBC/General)")
+        match_items: List[SchemeMatchItem] = []
+        guidance_text = "Based on your confirmed profile information, matching health schemes were retrieved."
 
-        # Prepare matching items from retrieved RAG sources
-        scheme_items: List[SchemeMatchItem] = []
-        seen_schemes = set()
-
-        for chunk in retrieved_chunks:
-            source_file = chunk.get("source", "health_schemes.pdf")
-            page_num = chunk.get("page", 1)
-            text_snippet = chunk.get("text", "")
-            
-            # Simple title extraction heuristics from chunk
-            first_line = text_snippet.split(".")[0][:80]
-            scheme_title = first_line if len(first_line) > 10 else f"Health Scheme (Page {page_num})"
-            
-            if scheme_title not in seen_schemes:
-                seen_schemes.add(scheme_title)
-                scheme_items.append(
-                    SchemeMatchItem(
-                        scheme_name=scheme_title,
-                        description=text_snippet[:150] + "...",
-                        eligibility_notes="Extracted from official document chunk for matching criteria.",
-                        required_documents=["Aadhaar Card", "Ration Card / Income Certificate"],
-                        source_document=source_file,
-                        page=page_num
-                    )
-                )
-
-        # Build guidance notes via Gemini if configured
-        guidance_text = ""
         if self.gemini_service.is_configured() and retrieved_chunks:
-            context_text = "\n\n".join(c.get("text", "") for c in retrieved_chunks)
-            prompt = (
-                f"User Profile: Age={request.age}, State={request.state}, Income={request.annual_income}, "
-                f"Category={request.category}, Disability={request.disability_status}, Gender={request.gender}.\n\n"
-                f"Retrieved Official Context:\n{context_text}\n\n"
-                f"In simple {lang_name}, explain which government health schemes the user may be eligible for "
-                f"based STRICTLY on the context. Mention required documents if specified in the text. "
-                f"Explicitly state that final approval depends on official government verification."
-            )
             try:
-                guidance_text = self.gemini_service.generate_rag_response(
+                prompt = SCHEME_MATCHING_PROMPT.format(
+                    user_profile_json=json.dumps(profile, indent=2),
+                    scheme_context=context_text
+                )
+                raw_response = self.gemini_service.generate_rag_response(
                     question=prompt,
                     language_code=lang_code,
                     context=context_text
                 )
-            except Exception as e:
-                logger.warning(f"Failed to generate Gemini eligibility guidance: {str(e)}")
-                guidance_text = f"Based on retrieved documentation, relevant scheme details were found on pages " + \
-                                ", ".join(str(c.get("page")) for c in retrieved_chunks[:3]) + "."
-        else:
-            guidance_text = "Please refer to the matching schemes listed below from the official documentation."
 
-        user_profile_summary = {
+                # Parse JSON array output from Gemini
+                cleaned_json = raw_response.strip()
+                if "```json" in cleaned_json:
+                    cleaned_json = cleaned_json.split("```json")[1].split("```")[0].strip()
+                elif "```" in cleaned_json:
+                    cleaned_json = cleaned_json.split("```")[1].split("```")[0].strip()
+
+                parsed_schemes = json.loads(cleaned_json)
+                if isinstance(parsed_schemes, list):
+                    for item in parsed_schemes:
+                        if isinstance(item, dict) and "scheme_name" in item:
+                            match_items.append(
+                                SchemeMatchItem(
+                                    scheme_name=item.get("scheme_name", "Health Scheme"),
+                                    eligibility_status=item.get("eligibility_status", "Potentially eligible"),
+                                    why_it_matches=item.get("why_it_matches", "Matches provided user parameters."),
+                                    key_benefits=item.get("key_benefits", "Financial assistance & hospital coverage."),
+                                    required_documents=item.get("required_documents", ["Aadhaar Card", "Ration Card"]),
+                                    source_document=item.get("source_document", "MITRA_AI_156_Health_Schemes_Programs.pdf"),
+                                    page=item.get("page", 1)
+                                )
+                            )
+            except Exception as e:
+                logger.warning(f"Gemini scheme matching fallback ({str(e)}). Using RAG chunk fallback.")
+
+        # Fallback if Gemini matching failed or returned empty
+        if not match_items and retrieved_chunks:
+            seen = set()
+            for chunk in retrieved_chunks:
+                source_file = chunk.get("source", "health_schemes.pdf")
+                page_num = chunk.get("page", 1)
+                text_snippet = chunk.get("text", "")
+                first_line = text_snippet.split(".")[0][:80]
+                scheme_title = first_line if len(first_line) > 10 else f"Health Scheme (Page {page_num})"
+                if scheme_title not in seen:
+                    seen.add(scheme_title)
+                    match_items.append(
+                        SchemeMatchItem(
+                            scheme_name=scheme_title,
+                            eligibility_status="Potentially eligible",
+                            why_it_matches="Matches search criteria in official health scheme corpus.",
+                            key_benefits=text_snippet[:150] + "...",
+                            required_documents=["Aadhaar Card", "Income Certificate"],
+                            source_document=source_file,
+                            page=page_num
+                        )
+                    )
+
+        return SchemeMatchResponse(
+            confirmed_profile=profile,
+            matching_schemes=match_items[:5],
+            guidance_notes=guidance_text,
+            disclaimer=DISCLAIMERS.get(lang_code, DISCLAIMERS["en"])
+        )
+
+    def evaluate_eligibility(self, request: EligibilityCriteriaRequest) -> EligibilityGuidanceResponse:
+        """Legacy evaluation endpoint compatibility."""
+        profile_dict = {
             "age": request.age,
             "state": request.state,
             "annual_income": request.annual_income,
@@ -106,11 +114,26 @@ class EligibilityService:
             "disability_status": request.disability_status,
             "gender": request.gender
         }
+        match_resp = self.match_confirmed_profile(
+            SchemeMatchRequest(confirmed_profile=profile_dict, language=request.language)
+        )
+        
+        legacy_items = [
+            OldSchemeMatchItem(
+                scheme_name=m.scheme_name,
+                description=m.key_benefits or "",
+                eligibility_notes=m.why_it_matches,
+                required_documents=m.required_documents or [],
+                source_document=m.source_document or "",
+                page=m.page or 1
+            )
+            for m in match_resp.matching_schemes
+        ]
 
         return EligibilityGuidanceResponse(
-            user_profile=user_profile_summary,
-            matching_schemes=scheme_items[:4],
-            guidance_notes=guidance_text,
-            missing_information=missing_fields,
-            disclaimer=DISCLAIMERS.get(lang_code, DISCLAIMERS["en"])
+            user_profile=profile_dict,
+            matching_schemes=legacy_items,
+            guidance_notes=match_resp.guidance_notes,
+            missing_information=[],
+            disclaimer=match_resp.disclaimer
         )
