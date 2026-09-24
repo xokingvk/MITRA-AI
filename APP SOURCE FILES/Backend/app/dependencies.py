@@ -5,6 +5,7 @@ from app.services.conversation_service import ConversationService
 from app.services.document_service import DocumentService
 from app.services.eligibility_service import EligibilityService
 from app.services.rag_service import RAGService
+from app.services.voice_service import VoiceService
 
 # Singletons initialization for high efficiency across FastAPI requests
 retrieval_service = RetrievalService()
@@ -18,6 +19,7 @@ rag_service = RAGService(
     conversation_service=conversation_service,
     document_service=document_service
 )
+voice_service = VoiceService()
 
 def get_retrieval_service() -> RetrievalService:
     return retrieval_service
@@ -36,3 +38,6 @@ def get_eligibility_service() -> EligibilityService:
 
 def get_rag_service() -> RAGService:
     return rag_service
+
+def get_voice_service() -> VoiceService:
+    return voice_service

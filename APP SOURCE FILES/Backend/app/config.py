@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     PERMANENT_DOCUMENT_PATH: str = str(BASE_DIR / "data" / "permanent_documents")
     TEMPORARY_DOCUMENT_PATH: str = str(BASE_DIR / "data" / "temporary_documents")
     
+    # Sarvam Configuration
+    SARVAM_API_KEY: str = ""
+    SARVAM_STT_MODEL: str = "saaras:v2"
+    SARVAM_TTS_MODEL: str = "bulbul:v1"
+    
     # CORS
     CORS_ORIGINS: str = "*"
 

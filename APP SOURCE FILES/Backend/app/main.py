@@ -6,8 +6,9 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.exceptions import MitraException
-from app.api import health, chat, documents, rag, schemes
+from app.api import health, chat, documents, rag, schemes, voice
 from app.dependencies import get_retrieval_service
+from app.services.embedding_service import EmbeddingService
 
 # Setup logging configuration
 logging.basicConfig(
@@ -20,13 +21,13 @@ logger = logging.getLogger("mitra_backend")
 async def lifespan(app: FastAPI):
     """
     Application startup and shutdown lifespan context.
-    Fast startup: Loads lightweight pre-built FAISS index metadata if present.
-    Does NOT trigger expensive PDF ingestion or model loading at startup.
+    Eagerly loads lightweight pre-built FAISS index and the embedding model into RAM at server boot,
+    preventing first-request delays on Render.
     """
     logger.info("Initializing MITRA AI Backend service...")
     retrieval_svc = get_retrieval_service()
 
-    # Load pre-built FAISS vector store if available (memory footprint < 5MB)
+    # 1. Load pre-built FAISS vector store if available
     try:
         if retrieval_svc.load_index():
             logger.info("FAISS vector store metadata loaded successfully.")
@@ -34,6 +35,14 @@ async def lifespan(app: FastAPI):
             logger.info("No pre-built FAISS index found. Vector search will load when available.")
     except Exception as e:
         logger.warning(f"Note on initial vector index load: {str(e)}")
+
+    # 2. Eagerly warm up embedding model concurrently at startup
+    try:
+        import asyncio
+        embedding_svc = EmbeddingService()
+        asyncio.create_task(asyncio.to_thread(embedding_svc.load_model))
+    except Exception as e:
+        logger.warning(f"Embedding model preload note: {str(e)}")
     
     yield
     logger.info("Shutting down MITRA AI Backend service.")
@@ -49,10 +58,11 @@ app = FastAPI(
 origins = settings.get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins if origins else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Exception handlers
@@ -71,6 +81,7 @@ async def mitra_exception_handler(request: Request, exc: MitraException):
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
+app.include_router(voice.router)
 app.include_router(rag.router)
 app.include_router(schemes.router)
 

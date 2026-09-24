@@ -1,6 +1,7 @@
 import logging
 import gc
 import numpy as np
+import threading
 from typing import Optional, List
 from app.config import settings
 
@@ -8,38 +9,49 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     _instance = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(EmbeddingService, cls).__new__(cls)
-            cls._instance.model = None
-            cls._instance._is_loading = False
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(EmbeddingService, cls).__new__(cls)
+                    cls._instance.model = None
+                    cls._instance._is_loading = False
         return cls._instance
 
     def is_model_loaded(self) -> bool:
         """Returns True if the embedding model weights are loaded in memory."""
         return self.model is not None
 
-    def _get_model(self):
-        """Lazily loads the SentenceTransformer model on first query/encode call."""
+    def load_model(self):
+        """Eagerly loads the SentenceTransformer embedding model into RAM."""
         if self.model is None:
-            logger.info(f"Lazily loading embedding model: {settings.EMBEDDING_MODEL_NAME}...")
-            try:
-                import torch
-                # Limit PyTorch CPU threads to minimize RAM and CPU thread pool overhead
-                torch.set_num_threads(1)
-                if hasattr(torch, "set_num_interop_threads"):
+            with self._lock:
+                if self.model is None:
+                    logger.info(f"Loading embedding model: {settings.EMBEDDING_MODEL_NAME}...")
                     try:
-                        torch.set_num_interop_threads(1)
-                    except Exception:
+                        import torch
+                        torch.set_num_threads(1)
+                        if hasattr(torch, "set_num_interop_threads"):
+                            try:
+                                torch.set_num_interop_threads(1)
+                            except Exception:
+                                pass
+                    except ImportError:
                         pass
-            except ImportError:
-                pass
 
-            from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
-            logger.info("Embedding model successfully loaded into memory.")
+                    from sentence_transformers import SentenceTransformer
+                    try:
+                        self.model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME, local_files_only=True)
+                    except Exception:
+                        self.model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
+                    logger.info("Embedding model loaded successfully.")
         return self.model
+
+    def _get_model(self):
+        """Returns loaded embedding model or loads it if not already initialized."""
+        return self.load_model()
 
     def encode(self, texts: List[str]) -> np.ndarray:
         """Encodes a list of text strings into normalized L2 embeddings."""

@@ -105,6 +105,65 @@ export async function checkBackendHealth() {
 }
 
 /**
+ * Transcribes recorded audio bytes using the backend STT service.
+ * @param {Blob} audioBlob - Recorded audio Blob from MediaRecorder
+ * @param {string} language - ISO language code
+ */
+export async function transcribeVoice(audioBlob, language = "en") {
+  try {
+    const formData = new FormData();
+    const fileExt = audioBlob.type.includes("mp4") ? "mp4" : audioBlob.type.includes("wav") ? "wav" : "webm";
+    formData.append("file", audioBlob, `voice_recording.${fileExt}`);
+    formData.append("language_code", language === "ta" ? "ta-IN" : language === "hi" ? "hi-IN" : "en-IN");
+
+    const response = await fetch(`${API_BASE_URL}/api/voice/transcribe`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.message || `Voice transcription failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("API transcribeVoice error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Synthesizes text to speech audio using the backend TTS service.
+ * @param {string} text - Text to speak
+ * @param {string} language - ISO language code
+ */
+export async function synthesizeVoice(text, language = "en") {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/voice/synthesize`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        language_code: language === "ta" ? "ta-IN" : language === "hi" ? "hi-IN" : "en-IN",
+      }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.message || `Voice synthesis failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("API synthesizeVoice error:", error);
+    throw error;
+  }
+}
+
+/**
  * Fetches available health schemes catalog.
  */
 export async function fetchSchemes(category = null, language = "en") {

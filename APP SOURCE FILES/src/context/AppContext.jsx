@@ -69,36 +69,26 @@ export const AppProvider = ({ children }) => {
   }, [accessibility]);
 
   // Voice Interactions
-  const startListening = () => {
-    setIsListening(true);
-    voiceService.startListening(
-      (transcript) => {
-        setSpokenQuery(transcript);
-      },
-      (error) => {
-        console.warn("Voice input notice:", error);
-        setIsListening(false);
-      },
-      (finalTranscript) => {
-        setIsListening(false);
-        if (finalTranscript) {
-          setSpokenQuery(finalTranscript);
-        }
-      },
-      language === 'ta' ? 'ta-IN' : language === 'hi' ? 'hi-IN' : 'en-US'
-    );
+  const startRecordingAudio = async () => {
+    try {
+      setIsListening(true);
+      await voiceService.startRecording();
+    } catch (err) {
+      setIsListening(false);
+      console.error("[AppContext] startRecording error:", err);
+      throw err;
+    }
   };
 
-  const stopListening = () => {
-    voiceService.stopListening();
-    setIsListening(false);
-  };
-
-  const toggleListening = () => {
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
+  const stopRecordingAudio = async () => {
+    try {
+      setIsListening(false);
+      const audioBlob = await voiceService.stopRecording();
+      return audioBlob;
+    } catch (err) {
+      setIsListening(false);
+      console.error("[AppContext] stopRecording error:", err);
+      throw err;
     }
   };
 
@@ -107,7 +97,7 @@ export const AppProvider = ({ children }) => {
     setIsPlayingAudio(true);
     voiceService.speak(text, () => {
       setIsPlayingAudio(false);
-    });
+    }, language);
   };
 
   const stopAudio = () => {
@@ -132,9 +122,10 @@ export const AppProvider = ({ children }) => {
         setSpokenQuery,
         isPlayingAudio,
         audioTranscript,
-        startListening,
-        stopListening,
-        toggleListening,
+        startListening: startRecordingAudio,
+        stopListening: stopRecordingAudio,
+        startRecordingAudio,
+        stopRecordingAudio,
         speakText,
         speak: speakText,
         isSpeaking: isPlayingAudio,

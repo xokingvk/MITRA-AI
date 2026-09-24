@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Header } from '../components/layout/Header';
 import { BottomNav } from '../components/layout/BottomNav';
+import { voiceService } from '../services/voiceService';
 import { sendChatMessage } from '../services/api';
 
 export const ActiveVoiceListeningPage = () => {
@@ -11,73 +12,109 @@ export const ActiveVoiceListeningPage = () => {
     spokenQuery, 
     setSpokenQuery, 
     setSearchQuery, 
-    isListening, 
-    startListening, 
-    stopListening, 
     speakText,
     language,
     t 
   } = useApp();
 
-  const [analyzing, setAnalyzing] = useState(false);
+  // Turn-based states: 'idle' | 'recording' | 'transcribing' | 'thinking' | 'speaking' | 'error'
+  const [voiceState, setVoiceState] = useState('idle');
   const [uiNotice, setUiNotice] = useState('');
   const [waveHeights, setWaveHeights] = useState([20, 36, 56, 44, 64, 40, 56, 28, 48, 60, 32, 16]);
-  const hasSubmittedRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  const startVoiceRecording = async () => {
+    try {
+      setUiNotice('');
+      setVoiceState('recording');
+      await voiceService.startRecording();
+    } catch (err) {
+      console.error("[VOICE UI] Failed to start recording:", err);
+      setVoiceState('error');
+      setUiNotice(err.message || "Failed to start microphone recording.");
+    }
+  };
 
   useEffect(() => {
-    startListening((fullText) => {
-      if (fullText) setUiNotice('');
-    }, (errorMsg) => {
-      setUiNotice(errorMsg);
-    });
+    isMountedRef.current = true;
+    startVoiceRecording();
 
     const interval = setInterval(() => {
       setWaveHeights(prev => prev.map(() => Math.floor(Math.random() * 45) + 12));
-    }, 240);
+    }, 200);
 
     return () => {
+      isMountedRef.current = false;
       clearInterval(interval);
-      stopListening();
+      voiceService.stopRecording().catch(() => {});
+      voiceService.stopSpeaking();
     };
   }, []);
 
   const handleDoneSpeaking = async () => {
-    if (hasSubmittedRef.current) return;
+    // If already typed text into box, allow direct submission
+    if (voiceState === 'transcribing' || voiceState === 'thinking') return;
 
-    const trimmedQuery = spokenQuery ? spokenQuery.trim() : "";
-    if (!trimmedQuery) {
-      console.warn("[VOICE] Submission blocked: empty transcript.");
-      setUiNotice("Please speak into your microphone or type your query below before submitting.");
+    let finalQuery = (spokenQuery || "").trim();
+
+    // 1. If currently recording, stop MediaRecorder and transcribe
+    if (voiceState === 'recording') {
+      try {
+        setVoiceState('transcribing');
+        const audioBlob = await voiceService.stopRecording();
+        
+        if (audioBlob && audioBlob.size > 0) {
+          const transcript = await voiceService.transcribe(audioBlob, language);
+          if (transcript && transcript.trim()) {
+            finalQuery = transcript.trim();
+            setSpokenQuery(finalQuery);
+          }
+        }
+      } catch (err) {
+        console.warn("[VOICE UI] Transcription error:", err);
+        if (!finalQuery) {
+          setVoiceState('error');
+          setUiNotice(err.message || "Voice transcription failed. Please speak clearly or type your question below.");
+          return;
+        }
+      }
+    }
+
+    if (!finalQuery) {
+      setVoiceState('error');
+      setUiNotice("No speech detected in recording. Please speak into your microphone or type your question in the text box below.");
       return;
     }
 
-    hasSubmittedRef.current = true;
-    setAnalyzing(true);
-    stopListening();
-
-    setSearchQuery(trimmedQuery);
-
+    // 2. Put transcript into chat pipeline
     try {
-      const response = await sendChatMessage(trimmedQuery, language);
+      setVoiceState('thinking');
+      setSearchQuery(finalQuery);
+
+      const response = await sendChatMessage(finalQuery, language);
       if (response && response.answer) {
+        setVoiceState('speaking');
         speakText(response.answer);
       }
     } catch (err) {
-      console.warn("Backend chat query notice:", err);
+      console.error("[VOICE UI] Chat backend error:", err);
     } finally {
-      navigate('/search-results');
+      if (isMountedRef.current) {
+        navigate('/search-results');
+      }
     }
   };
 
-  const handleRestart = () => {
-    hasSubmittedRef.current = false;
-    stopListening();
+  const handleRestart = async () => {
+    voiceService.stopSpeaking();
+    await voiceService.stopRecording().catch(() => {});
     setSpokenQuery('');
     setUiNotice('');
-    setTimeout(() => {
-      startListening();
-    }, 200);
+    await startVoiceRecording();
   };
+
+  const isRecording = voiceState === 'recording';
+  const isBusy = voiceState === 'transcribing' || voiceState === 'thinking' || voiceState === 'speaking';
 
   return (
     <div className="bg-surface-sand text-text-charcoal font-body-md min-h-screen flex flex-col">
@@ -89,25 +126,29 @@ export const ActiveVoiceListeningPage = () => {
         <div className="flex items-center justify-between gap-2 pt-1">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-warm-white shadow-sm border border-border-warm-gray/30">
             <span className="relative flex h-2.5 w-2.5">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isListening ? 'bg-secondary' : 'bg-slate-400'} opacity-75`}></span>
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isListening ? 'bg-secondary' : 'bg-slate-400'}`}></span>
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isRecording ? 'bg-secondary' : isBusy ? 'bg-amber-500' : 'bg-slate-400'} opacity-75`}></span>
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isRecording ? 'bg-secondary' : isBusy ? 'bg-amber-500' : 'bg-slate-400'}`}></span>
             </span>
-            <span className={`font-label-sm text-xs font-semibold ${isListening ? 'text-secondary' : 'text-slate-600'}`}>
-              {isListening ? t("activeVoice.listening") : "Paused"}
+            <span className={`font-label-sm text-xs font-semibold ${isRecording ? 'text-secondary' : isBusy ? 'text-amber-600' : 'text-slate-600'}`}>
+              {voiceState === 'recording' ? t("activeVoice.listening") :
+               voiceState === 'transcribing' ? 'Transcribing Speech...' :
+               voiceState === 'thinking' ? 'Consulting Health Schemes...' :
+               voiceState === 'speaking' ? 'Playing Response...' :
+               voiceState === 'error' ? 'Voice Notice' : 'Ready'}
             </span>
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-warm-white shadow-sm border border-border-warm-gray/30">
-            <span className="material-symbols-outlined text-[16px] text-emerald-600 font-bold">graphic_eq</span>
+            <span className="material-symbols-outlined text-[16px] text-emerald-600 font-bold">mic</span>
             <span className="font-label-sm text-xs text-text-charcoal font-medium">
-              {t("activeVoice.goodClarity")}
+              Audio Recording
             </span>
           </div>
         </div>
 
-        {/* Notice Banner */}
+        {/* Error / Notice Banner */}
         {uiNotice && (
-          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-medium leading-relaxed">
+          <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-xs font-medium leading-relaxed shadow-sm">
             {uiNotice}
           </div>
         )}
@@ -116,10 +157,13 @@ export const ActiveVoiceListeningPage = () => {
         <div className="relative flex flex-col items-center justify-center p-6 rounded-3xl bg-surface-warm-white shadow-sm overflow-hidden min-h-[180px] border border-border-warm-gray/40">
           <div className="flex flex-col items-center text-center z-10 mb-4">
             <p className="font-headline-sm text-base font-bold text-text-charcoal">
-              {isListening ? t("activeVoice.listening") : "Tap Done to Submit"}
+              {isRecording ? "Recording your question..." :
+               voiceState === 'transcribing' ? "Converting audio to text..." :
+               voiceState === 'thinking' ? "Finding matching schemes..." :
+               "Tap Done to Submit"}
             </p>
             <p className="font-body-sm text-xs text-text-slate mt-0.5">
-              {t("home.speakSub")}
+              {isRecording ? "Speak clearly into your microphone, then tap Done." : "Review or edit your question below."}
             </p>
           </div>
 
@@ -127,14 +171,14 @@ export const ActiveVoiceListeningPage = () => {
             {waveHeights.map((h, i) => (
               <span
                 key={i}
-                className={`w-1.5 rounded-full transition-all duration-200 ${isListening ? 'bg-primary-container' : 'bg-slate-300'}`}
-                style={{ height: isListening ? `${h}px` : '12px' }}
+                className={`w-1.5 rounded-full transition-all duration-200 ${isRecording ? 'bg-primary-container' : 'bg-slate-300'}`}
+                style={{ height: isRecording ? `${h}px` : '12px' }}
               />
             ))}
           </div>
         </div>
 
-        {/* Real-time Transcript */}
+        {/* Editable Transcript Section */}
         <section className="bg-surface-warm-white rounded-3xl p-5 shadow-sm border border-border-warm-gray/40 flex flex-col gap-3">
           <div className="flex items-center justify-between border-b border-border-warm-gray/30 pb-2.5">
             <div className="flex items-center gap-2">
@@ -143,10 +187,10 @@ export const ActiveVoiceListeningPage = () => {
                 {t("activeVoice.realtimeTranscript")}
               </h3>
             </div>
-            {isListening && (
+            {isRecording && (
               <span className="text-[11px] font-semibold text-secondary flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-                {t("activeVoice.transcribingLive")}
+                Recording audio...
               </span>
             )}
           </div>
@@ -156,25 +200,25 @@ export const ActiveVoiceListeningPage = () => {
               id="voiceTranscriptInput"
               value={spokenQuery}
               onChange={(e) => setSpokenQuery(e.target.value)}
-              placeholder="Listening... speak into your microphone or edit text here"
+              placeholder="Speak into microphone or edit your question here..."
               rows={3}
               className="w-full bg-transparent font-body-md text-sm text-text-charcoal leading-relaxed focus:outline-none resize-none"
             />
           </div>
         </section>
 
-        {/* Actions */}
+        {/* Action Buttons */}
         <section className="flex flex-col gap-3">
           <button
             onClick={handleDoneSpeaking}
-            disabled={analyzing}
+            disabled={isBusy}
             className="w-full py-4 rounded-full bg-primary-container text-on-primary font-label-md text-sm font-semibold hover:bg-primary active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-2 min-h-[52px]"
             type="button"
           >
-            {analyzing ? (
+            {isBusy ? (
               <>
                 <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-                <span>{t("activeVoice.analyzingSchemes")}</span>
+                <span>{voiceState === 'transcribing' ? 'Transcribing...' : t("activeVoice.analyzingSchemes")}</span>
               </>
             ) : (
               <>
@@ -187,6 +231,7 @@ export const ActiveVoiceListeningPage = () => {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handleRestart}
+              disabled={isBusy}
               className="py-3 rounded-2xl bg-surface-sand text-text-charcoal font-label-sm text-xs font-semibold hover:bg-surface-dim transition-colors border border-border-warm-gray/40 min-h-[44px]"
               type="button"
             >
@@ -194,7 +239,8 @@ export const ActiveVoiceListeningPage = () => {
             </button>
             <button
               onClick={() => {
-                stopListening();
+                voiceService.stopRecording().catch(() => {});
+                voiceService.stopSpeaking();
                 navigate('/');
               }}
               className="py-3 rounded-2xl bg-surface-sand text-text-charcoal font-label-sm text-xs font-semibold hover:bg-surface-dim transition-colors border border-border-warm-gray/40 min-h-[44px]"
