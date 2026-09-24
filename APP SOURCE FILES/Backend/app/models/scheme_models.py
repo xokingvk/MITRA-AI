@@ -6,9 +6,10 @@ class EligibilityCriteriaRequest(BaseModel):
     state: Optional[str] = Field(None, description="State of residence (e.g. Tamil Nadu, Maharashtra)")
     annual_income: Optional[float] = Field(None, ge=0, description="Annual household income in INR")
     category: Optional[str] = Field(None, description="Category (General, SC, ST, OBC, EWS)")
-    disability_status: Optional[bool] = Field(False, description="Person with Disability (PwD)")
+    disability_status: Optional[bool] = Field(None, description="Person with Disability (PwD)")
+    pregnancy_status: Optional[bool] = Field(None, description="Pregnancy / Lactating status")
     gender: Optional[str] = Field(None, description="Gender (Female, Male, Other)")
-    occupation: Optional[str] = Field(None, description="Occupation (e.g. Farmer, Unorganized Worker)")
+    occupation: Optional[str] = Field(None, description="Occupation (e.g. Worker, Self-employed)")
     language: str = Field("en", description="Language code for output response")
 
 class SchemeMatchItem(BaseModel):

@@ -23,8 +23,9 @@ class SchemeMatchRequest(BaseModel):
 
 class SchemeMatchItem(BaseModel):
     scheme_name: str = Field(..., description="Name of matched health scheme")
-    eligibility_status: str = Field(..., description="Eligible | Potentially eligible | Not enough information | Not eligible")
-    why_it_matches: str = Field(..., description="Detailed explanation of eligibility match/mismatch")
+    short_description: Optional[str] = Field(None, description="One or two sentence simple description")
+    eligibility_status: str = Field(..., description="Potentially relevant | Eligible | Not enough information | Not eligible")
+    why_it_matches: str = Field(..., description="Detailed explanation of eligibility match/relevance")
     key_benefits: Optional[str] = Field(None, description="Summary of key health/financial benefits")
     required_documents: Optional[List[str]] = Field(default_factory=list, description="Documents required for application")
     source_document: Optional[str] = Field(None, description="Source PDF filename in RAG corpus")
@@ -32,7 +33,8 @@ class SchemeMatchItem(BaseModel):
 
 class SchemeMatchResponse(BaseModel):
     confirmed_profile: Dict[str, Any] = Field(..., description="Confirmed user profile used for matching")
-    matching_schemes: List[SchemeMatchItem] = Field(..., description="List of scheme match results")
+    matching_schemes: List[SchemeMatchItem] = Field(default_factory=list, description="List of scheme match results")
+    missing_information: List[str] = Field(default_factory=list, description="Information missing for complete scheme matching")
     guidance_notes: str = Field(..., description="Overall guidance notes from Gemini")
     disclaimer: str = Field(..., description="Official verification disclaimer")
 

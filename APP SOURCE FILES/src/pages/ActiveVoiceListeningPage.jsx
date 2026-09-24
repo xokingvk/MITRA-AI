@@ -86,22 +86,10 @@ export const ActiveVoiceListeningPage = () => {
       return;
     }
 
-    // 2. Put transcript into chat pipeline
-    try {
-      setVoiceState('thinking');
-      setSearchQuery(finalQuery);
-
-      const response = await sendChatMessage(finalQuery, language);
-      if (response && response.answer) {
-        setVoiceState('speaking');
-        speakText(response.answer);
-      }
-    } catch (err) {
-      console.error("[VOICE UI] Chat backend error:", err);
-    } finally {
-      if (isMountedRef.current) {
-        navigate('/search-results');
-      }
+    // 2. Put transcript into search query and navigate to results page
+    setSearchQuery(finalQuery);
+    if (isMountedRef.current) {
+      navigate('/search-results');
     }
   };
 

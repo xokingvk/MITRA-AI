@@ -18,31 +18,41 @@ class EligibilityService:
         lang_info = resolve_language(request.language or "en")
         lang_code = lang_info["code"]
 
-        raw_matches = self.gemini_service.match_confirmed_profile(profile, lang_code)
+        gemini_result = self.gemini_service.match_confirmed_profile(profile, lang_code)
         
+        raw_matches = gemini_result.get("matching_schemes", []) if isinstance(gemini_result, dict) else (gemini_result if isinstance(gemini_result, list) else [])
+        missing_info = gemini_result.get("missing_information", []) if isinstance(gemini_result, dict) else []
+        guidance_text = gemini_result.get("guidance_notes", "") if isinstance(gemini_result, dict) else ""
+
         match_items: List[SchemeMatchItem] = []
         for item in raw_matches:
             if isinstance(item, dict) and "scheme_name" in item:
                 match_items.append(
                     SchemeMatchItem(
                         scheme_name=item.get("scheme_name", "Health Scheme"),
-                        eligibility_status=item.get("eligibility_status", "Potentially eligible"),
+                        short_description=item.get("short_description", "Government healthcare welfare program."),
+                        eligibility_status=item.get("eligibility_status", "Potentially relevant"),
                         why_it_matches=item.get("why_it_matches", "Matches confirmed demographic factors."),
                         key_benefits=item.get("key_benefits", "Financial assistance and hospital care coverage."),
-                        required_documents=item.get("required_documents", ["Aadhaar Card", "Ration Card"]),
+                        required_documents=item.get("required_documents", ["Aadhaar Card"]),
                         source_document=item.get("source_document", "National Health Schemes Directory"),
                         page=item.get("page", 1)
                     )
                 )
 
-        guidance_text = (
-            f"Based on your confirmed details, {len(match_items)} relevant government health welfare programs were evaluated. "
-            f"Please verify exact enrollment guidelines at your nearest primary health center or official government portal."
-        )
+        if not guidance_text:
+            if match_items:
+                guidance_text = (
+                    f"Based on your confirmed details, {len(match_items)} government health welfare program(s) may be relevant to you. "
+                    f"Please verify exact enrollment guidelines at your nearest primary health center or official government portal."
+                )
+            else:
+                guidance_text = "More information is needed to identify schemes that may be relevant to you."
 
         return SchemeMatchResponse(
             confirmed_profile=profile,
             matching_schemes=match_items,
+            missing_information=missing_info,
             guidance_notes=guidance_text,
             disclaimer=DISCLAIMERS.get(lang_code, DISCLAIMERS["en"])
         )
@@ -55,7 +65,9 @@ class EligibilityService:
             "annual_income": request.annual_income,
             "category": request.category,
             "disability_status": request.disability_status,
-            "gender": request.gender
+            "pregnancy_status": request.pregnancy_status,
+            "gender": request.gender,
+            "occupation": request.occupation
         }
         match_resp = self.match_confirmed_profile(
             SchemeMatchRequest(confirmed_profile=profile_dict, language=request.language)
@@ -64,7 +76,7 @@ class EligibilityService:
         legacy_items = [
             OldSchemeMatchItem(
                 scheme_name=m.scheme_name,
-                description=m.key_benefits or "",
+                description=m.short_description or m.key_benefits or "",
                 eligibility_notes=m.why_it_matches,
                 required_documents=m.required_documents or [],
                 source_document=m.source_document or "",
@@ -77,6 +89,6 @@ class EligibilityService:
             user_profile=profile_dict,
             matching_schemes=legacy_items,
             guidance_notes=match_resp.guidance_notes,
-            missing_information=[],
+            missing_information=match_resp.missing_information,
             disclaimer=match_resp.disclaimer
         )

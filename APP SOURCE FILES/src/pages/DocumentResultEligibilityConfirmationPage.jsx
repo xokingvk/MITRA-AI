@@ -11,23 +11,33 @@ export const DocumentResultEligibilityConfirmationPage = () => {
 
   const initialExtracted = analysisResult?.extracted_profile || {};
 
+  // Form fields with NO fabricated defaults (null/empty when unknown)
   const [formData, setFormData] = useState({
     name: initialExtracted.name || '',
     age: initialExtracted.age !== null && initialExtracted.age !== undefined ? String(initialExtracted.age) : '',
     gender: initialExtracted.gender || '',
     state: initialExtracted.state || '',
     district: initialExtracted.district || '',
+    address: initialExtracted.address || '',
+    pincode: initialExtracted.pincode || '',
     annual_income: initialExtracted.annual_income !== null && initialExtracted.annual_income !== undefined ? String(initialExtracted.annual_income) : '',
     occupation: initialExtracted.occupation || '',
-    disability_status: initialExtracted.disability_status ? 'Yes' : 'No'
+    category: initialExtracted.category || '',
+    disability_status: initialExtracted.disability_status === true ? 'Yes' : initialExtracted.disability_status === false ? 'No' : '',
+    pregnancy_status: initialExtracted.pregnancy_status === true ? 'Yes' : initialExtracted.pregnancy_status === false ? 'No' : ''
   });
 
   const [matchingResults, setMatchingResults] = useState(null);
   const [loadingMatch, setLoadingMatch] = useState(false);
   const [matchError, setMatchError] = useState(null);
+  const [expandedSchemeIdx, setExpandedSchemeIdx] = useState(null);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const toggleSchemeExpand = (idx) => {
+    setExpandedSchemeIdx(prev => prev === idx ? null : idx);
   };
 
   const handleConfirmAndMatch = async (e) => {
@@ -35,15 +45,20 @@ export const DocumentResultEligibilityConfirmationPage = () => {
     setLoadingMatch(true);
     setMatchError(null);
 
+    // Strictly preserve null for unspecified fields (NO false defaults)
     const confirmedProfile = {
       name: formData.name.trim() || null,
       age: formData.age.trim() ? parseInt(formData.age, 10) : null,
       gender: formData.gender.trim() || null,
       state: formData.state.trim() || null,
       district: formData.district.trim() || null,
+      address: formData.address.trim() || null,
+      pincode: formData.pincode.trim() || null,
       annual_income: formData.annual_income.trim() ? parseFloat(formData.annual_income) : null,
       occupation: formData.occupation.trim() || null,
-      disability_status: formData.disability_status === 'Yes'
+      category: formData.category.trim() || null,
+      disability_status: formData.disability_status === 'Yes' ? true : formData.disability_status === 'No' ? false : null,
+      pregnancy_status: formData.pregnancy_status === 'Yes' ? true : formData.pregnancy_status === 'No' ? false : null
     };
 
     // Store confirmed profile in AppContext
@@ -53,6 +68,7 @@ export const DocumentResultEligibilityConfirmationPage = () => {
       const matchResponse = await matchConfirmedProfile(confirmedProfile, language);
       setMatchingResults(matchResponse);
       if (matchResponse && matchResponse.guidance_notes) {
+        // Speak short guidance summary only
         speakText(matchResponse.guidance_notes);
       }
     } catch (err) {
@@ -86,6 +102,16 @@ export const DocumentResultEligibilityConfirmationPage = () => {
     );
   }
 
+  // Count fields found in document
+  const foundFields = [];
+  if (initialExtracted.name) foundFields.push("Name");
+  if (initialExtracted.age || initialExtracted.date_of_birth) foundFields.push("Age / DOB");
+  if (initialExtracted.gender) foundFields.push("Gender");
+  if (initialExtracted.state) foundFields.push("State");
+  if (initialExtracted.district) foundFields.push("District");
+  if (initialExtracted.address) foundFields.push("Address");
+  if (initialExtracted.pincode) foundFields.push("PIN Code");
+
   return (
     <div className="bg-surface-sand text-text-charcoal font-body-md min-h-screen flex flex-col">
       <Header title="Document Extraction & Matching" showBack />
@@ -102,25 +128,52 @@ export const DocumentResultEligibilityConfirmationPage = () => {
               Document Processed
             </h2>
             <p className="font-body-sm text-xs text-emerald-800 mt-0.5 truncate">
-              {analysisResult.filename} • Review and edit extracted fields below
+              {analysisResult.filename} • Visible facts extracted below
             </p>
           </div>
         </section>
 
-        {/* STEP 5: Editable Profile Confirmation Form */}
+        {/* Found vs Needed Information Summary */}
+        <section className="bg-surface-warm-white rounded-3xl p-5 shadow-sm border border-border-warm-gray/40 flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <span className="font-label-sm text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-emerald-600">check_circle</span>
+              Information Found from Document ({foundFields.length}):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {foundFields.length > 0 ? (
+                foundFields.map((field, i) => (
+                  <span key={i} className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold">
+                    ✓ {field}
+                  </span>
+                ))
+              ) : (
+                <span className="text-xs text-text-slate italic">Basic details detected. Please confirm below.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-border-warm-gray/30 flex flex-col gap-1.5">
+            <span className="font-label-sm text-xs font-bold text-secondary flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px]">help</span>
+              Information Needed for Scheme Matching:
+            </span>
+            <p className="font-body-sm text-[11px] text-text-slate leading-relaxed">
+              Health schemes determine eligibility based on income, pregnancy, disability, and category. Fill any relevant fields below:
+            </p>
+          </div>
+        </section>
+
+        {/* Editable Profile Confirmation Form */}
         <form onSubmit={handleConfirmAndMatch} className="bg-surface-warm-white rounded-3xl p-5 shadow-sm border border-border-warm-gray/40 flex flex-col gap-4">
           <div className="flex items-center justify-between border-b border-border-warm-gray/30 pb-2">
             <h3 className="font-headline-sm text-sm font-bold text-text-charcoal uppercase tracking-wider">
-              Step 1: Confirm Profile Details
+              Step 1: Review & Complete Profile
             </h3>
             <span className="text-[11px] font-semibold text-secondary">
-              Editable Form
+              Editable
             </span>
           </div>
-
-          <p className="font-body-sm text-xs text-text-slate">
-            Gemini extracted the information below from your uploaded document. Correct any field or add missing values before matching schemes.
-          </p>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="flex flex-col gap-1 col-span-2">
@@ -140,7 +193,7 @@ export const DocumentResultEligibilityConfirmationPage = () => {
                 type="number"
                 value={formData.age}
                 onChange={(e) => handleInputChange('age', e.target.value)}
-                placeholder="e.g. 45"
+                placeholder="e.g. 28"
                 className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
               />
             </div>
@@ -153,8 +206,8 @@ export const DocumentResultEligibilityConfirmationPage = () => {
                 className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
               >
                 <option value="">Not Specified</option>
-                <option value="Male">Male</option>
                 <option value="Female">Female</option>
+                <option value="Male">Male</option>
                 <option value="Other">Other</option>
               </select>
             </div>
@@ -176,7 +229,7 @@ export const DocumentResultEligibilityConfirmationPage = () => {
                 type="text"
                 value={formData.district}
                 onChange={(e) => handleInputChange('district', e.target.value)}
-                placeholder="e.g. Thanjavur"
+                placeholder="e.g. Madurai"
                 className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
               />
             </div>
@@ -187,7 +240,7 @@ export const DocumentResultEligibilityConfirmationPage = () => {
                 type="number"
                 value={formData.annual_income}
                 onChange={(e) => handleInputChange('annual_income', e.target.value)}
-                placeholder="e.g. 120000"
+                placeholder="e.g. 120000 (leave empty if unknown)"
                 className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
               />
             </div>
@@ -198,20 +251,50 @@ export const DocumentResultEligibilityConfirmationPage = () => {
                 type="text"
                 value={formData.occupation}
                 onChange={(e) => handleInputChange('occupation', e.target.value)}
-                placeholder="e.g. Farmer / Worker"
+                placeholder="e.g. Daily Wage Worker"
                 className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
               />
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="font-semibold text-text-slate">Disability Status</label>
+              <label className="font-semibold text-text-slate">Social Category</label>
+              <select
+                value={formData.category}
+                onChange={(e) => handleInputChange('category', e.target.value)}
+                className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
+              >
+                <option value="">Not Specified</option>
+                <option value="General">General</option>
+                <option value="OBC">OBC</option>
+                <option value="SC">SC</option>
+                <option value="ST">ST</option>
+                <option value="EWS">EWS</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="font-semibold text-text-slate">Pregnancy Status</label>
+              <select
+                value={formData.pregnancy_status}
+                onChange={(e) => handleInputChange('pregnancy_status', e.target.value)}
+                className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
+              >
+                <option value="">Not Specified</option>
+                <option value="Yes">Yes (Pregnant / Lactating)</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="font-semibold text-text-slate">Disability Status (PwD)</label>
               <select
                 value={formData.disability_status}
                 onChange={(e) => handleInputChange('disability_status', e.target.value)}
                 className="p-2.5 rounded-xl border border-border-warm-gray/60 bg-surface-sand/40 focus:outline-none focus:border-primary-container"
               >
-                <option value="No">No</option>
+                <option value="">Not Specified</option>
                 <option value="Yes">Yes (PwD)</option>
+                <option value="No">No</option>
               </select>
             </div>
           </div>
@@ -224,7 +307,7 @@ export const DocumentResultEligibilityConfirmationPage = () => {
             {loadingMatch ? (
               <>
                 <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-                <span>Matching Against Scheme Corpus...</span>
+                <span>Evaluating Health Schemes...</span>
               </>
             ) : (
               <>
@@ -241,67 +324,128 @@ export const DocumentResultEligibilityConfirmationPage = () => {
           </div>
         )}
 
-        {/* STEP 6: Scheme Match Results Display */}
+        {/* Scheme Match Results Section */}
         {matchingResults && (
           <section className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-headline-sm text-base font-bold text-text-charcoal flex items-center gap-2">
-                <span className="material-symbols-outlined text-emerald-600 text-[22px]">verified</span>
-                Matched Health Schemes ({matchingResults.matching_schemes?.length || 0})
-              </h3>
-            </div>
+            
+            {/* Header: Potentially Relevant Schemes Count */}
+            {matchingResults.matching_schemes && matchingResults.matching_schemes.length > 0 ? (
+              <div className="flex items-center justify-between px-1">
+                <h3 className="font-headline-sm text-base font-bold text-text-charcoal flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-600 text-[22px]">verified</span>
+                  Potentially Relevant Health Schemes ({matchingResults.matching_schemes.length})
+                </h3>
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 shadow-sm flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                  <span className="material-symbols-outlined text-[20px]">info</span>
+                  <span>More Information Needed</span>
+                </div>
+                <p className="font-body-sm text-xs text-amber-900 leading-relaxed">
+                  More information is needed to identify schemes that may be relevant to you.
+                </p>
+                {matchingResults.missing_information && matchingResults.missing_information.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {matchingResults.missing_information.map((item, idx) => (
+                      <span key={idx} className="px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-900 text-[11px] font-semibold">
+                        + Please provide {item}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {matchingResults.guidance_notes && (
-              <div className="bg-surface-warm-white rounded-3xl p-5 shadow-sm border border-border-warm-gray/40">
+              <div className="bg-surface-warm-white rounded-3xl p-4 shadow-sm border border-border-warm-gray/40">
                 <p className="font-body-sm text-xs text-text-charcoal leading-relaxed">
                   {matchingResults.guidance_notes}
                 </p>
               </div>
             )}
 
-            <div className="flex flex-col gap-3">
-              {matchingResults.matching_schemes?.map((scheme, idx) => {
-                const statusColor = 
-                  scheme.eligibility_status === 'Eligible' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                  scheme.eligibility_status === 'Potentially eligible' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                  scheme.eligibility_status === 'Not eligible' ? 'bg-red-100 text-red-800 border-red-300' :
-                  'bg-slate-100 text-slate-800 border-slate-300';
-
-                return (
-                  <div key={idx} className="bg-surface-warm-white rounded-3xl p-5 shadow-sm border border-border-warm-gray/40 flex flex-col gap-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="font-headline-sm text-sm font-bold text-text-charcoal">
-                        {scheme.scheme_name}
-                      </h4>
-                      <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border whitespace-nowrap ${statusColor}`}>
-                        {scheme.eligibility_status}
-                      </span>
-                    </div>
-
-                    <p className="font-body-sm text-xs text-text-slate leading-relaxed">
-                      {scheme.why_it_matches}
-                    </p>
-
-                    {scheme.key_benefits && (
-                      <div className="bg-surface-sand/60 p-3 rounded-2xl text-xs text-text-charcoal">
-                        <span className="font-bold block mb-0.5 text-primary-container">Key Benefits:</span>
-                        <span>{scheme.key_benefits}</span>
-                      </div>
-                    )}
-
-                    {scheme.required_documents && scheme.required_documents.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {scheme.required_documents.map((doc, dIdx) => (
-                          <span key={dIdx} className="px-2 py-0.5 rounded-lg bg-surface-sand text-text-slate text-[10px] font-semibold">
-                            📄 {doc}
+            {/* Scheme Cards */}
+            {matchingResults.matching_schemes && matchingResults.matching_schemes.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {matchingResults.matching_schemes.map((scheme, idx) => {
+                  const isExpanded = expandedSchemeIdx === idx;
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-surface-warm-white rounded-3xl p-5 shadow-sm border border-border-warm-gray/40 flex flex-col gap-3 transition-all"
+                    >
+                      {/* Card Header: Scheme Name & Status Badge */}
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-headline-sm text-sm font-bold text-text-charcoal">
+                            {scheme.scheme_name}
+                          </h4>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap flex-shrink-0">
+                            {scheme.eligibility_status || "Potentially relevant"}
                           </span>
-                        ))}
+                        </div>
+
+                        <p className="font-body-sm text-xs text-text-charcoal leading-relaxed">
+                          {scheme.short_description || scheme.key_benefits}
+                        </p>
+
+                        {scheme.why_it_matches && (
+                          <div className="flex items-center gap-1 text-[11px] text-secondary font-medium mt-0.5">
+                            <span className="material-symbols-outlined text-[14px]">lightbulb</span>
+                            <span>{scheme.why_it_matches}</span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+
+                      {/* View Details Toggle Button */}
+                      <button
+                        onClick={() => toggleSchemeExpand(idx)}
+                        className="w-full py-2.5 px-4 rounded-xl bg-surface-sand/80 hover:bg-surface-sand active:bg-surface-dim text-text-charcoal text-xs font-semibold flex items-center justify-between transition-colors border border-border-warm-gray/30"
+                        type="button"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px] text-primary-container">info</span>
+                          <span>{isExpanded ? 'Hide Details' : 'View Details'}</span>
+                        </span>
+                        <span className="material-symbols-outlined text-[18px] text-text-slate transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                          expand_more
+                        </span>
+                      </button>
+
+                      {/* Detailed Scheme Breakdown (Expanded View) */}
+                      {isExpanded && (
+                        <div className="pt-2 border-t border-border-warm-gray/30 flex flex-col gap-3 text-xs animate-fadeIn">
+                          {scheme.key_benefits && (
+                            <div className="bg-emerald-50/60 border border-emerald-100 p-3 rounded-2xl">
+                              <span className="font-bold text-emerald-950 block mb-0.5">Key Benefits:</span>
+                              <span className="text-emerald-900 leading-relaxed">{scheme.key_benefits}</span>
+                            </div>
+                          )}
+
+                          {scheme.required_documents && scheme.required_documents.length > 0 && (
+                            <div className="flex flex-col gap-1.5">
+                              <span className="font-bold text-text-charcoal">Required Documents:</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {scheme.required_documents.map((doc, dIdx) => (
+                                  <span key={dIdx} className="px-2.5 py-1 rounded-lg bg-surface-sand text-text-slate text-[11px] font-medium border border-border-warm-gray/30">
+                                    📄 {doc}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="p-2.5 bg-amber-50/70 border border-amber-200/60 rounded-xl text-[11px] text-amber-900 leading-relaxed">
+                            ℹ️ This scheme may be relevant based on your profile. Official enrollment is confirmed upon verification at your local healthcare center or official portal.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
 
