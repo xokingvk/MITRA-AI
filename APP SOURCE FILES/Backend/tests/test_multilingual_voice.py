@@ -124,15 +124,13 @@ def test_voice_service_gemini_transcribe():
 
         # Verify client.files.upload was called
         mock_client.files.upload.assert_called_once()
-        # Verify client.interactions.create was called with gemini-3.5-transcribe and verbatim mode
+        # Verify client.interactions.create was called with gemini-3.5-transcribe and input audio array
         mock_client.interactions.create.assert_called_once()
         call_kwargs = mock_client.interactions.create.call_args.kwargs
         assert call_kwargs["model"] == "gemini-3.5-transcribe"
         assert call_kwargs["input"][0]["type"] == "audio"
         assert call_kwargs["input"][0]["uri"] == mock_file.uri
-        assert call_kwargs["generation_config"]["transcription_config"]["mode"]["type"] == "verbatim"
-        assert call_kwargs["generation_config"]["transcription_config"]["language_codes"] == ["ta-IN"]
-        print("  OK: Gemini 3.5 Transcribe interactions call verified successfully!")
+        print("  OK: Gemini 3.5 Transcribe minimal interactions call verified successfully!")
 
 def test_document_extraction_gemini_interactions():
     print("\n=== TEST 4: Document Extraction Gemini Interactions Flow ===")

@@ -97,27 +97,24 @@ class VoiceService:
             )
             logger.info(f"Audio file uploaded successfully (URI: {uploaded_file.uri}, Name: {uploaded_file.name})")
 
-            # 3. Call client.interactions.create with gemini-3.5-transcribe and verbatim mode
-            logger.info(f"Calling client.interactions.create with model='{self.transcribe_model}'...")
-            
-            interaction = client.interactions.create(
-                model=self.transcribe_model,
-                input=[
+            # 3. Call client.interactions.create with minimal request structure
+            interaction_kwargs = {
+                "model": self.transcribe_model,
+                "input": [
                     {
                         "type": "audio",
                         "uri": uploaded_file.uri,
                         "mime_type": uploaded_file.mime_type or effective_mime,
                     }
                 ],
-                generation_config={
-                    "transcription_config": {
-                        "language_codes": [selected_locale],
-                        "mode": {
-                            "type": "verbatim"
-                        }
-                    }
-                }
-            )
+            }
+
+            logger.info(f"TRANSCRIPTION: model = {self.transcribe_model}")
+            logger.info(f"TRANSCRIPTION: audio_mime_type = {uploaded_file.mime_type or effective_mime}")
+            logger.info(f"TRANSCRIPTION: request_keys = {list(interaction_kwargs.keys())}")
+            logger.info(f"TRANSCRIPTION: language = {selected_locale}")
+            
+            interaction = client.interactions.create(**interaction_kwargs)
 
             transcript = ""
             if hasattr(interaction, "output_text") and interaction.output_text:
@@ -155,7 +152,13 @@ class VoiceService:
         except MitraException:
             raise
         except Exception as e:
-            logger.error(f"Gemini {self.transcribe_model} transcription failed: {str(e)}")
+            error_status = getattr(e, "status_code", getattr(e, "code", None))
+            logger.error(
+                f"TRANSCRIPTION ERROR: model={self.transcribe_model}, "
+                f"mime_type={effective_mime}, "
+                f"http_status={error_status}, "
+                f"gemini_error_message={str(e)}"
+            )
             raise MitraException(f"Sorry, I couldn't understand the voice recording: {str(e)}. Please try again.", status_code=500)
         finally:
             # Clean up local temporary file
